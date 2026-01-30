@@ -1,35 +1,45 @@
-Development Workflow (Git Worktrees + Copilot CLI)
+## Development Workflow (Git Worktrees + Copilot CLI)
 
-Goal
+### Goal
 - Enable parallel development with multiple coding agents by isolating work in git worktrees.
 
-Prereqs
+### Prereqs
 - Git repository initialized or cloned.
 - GitHub Copilot CLI installed and authenticated.
 - uv installed for Python dependency management.
 
-Worktree Layout
+### Worktree Layout
 - Keep the main worktree in the repo root.
 - Create one branch + worktree per agent.
 
-Create Worktrees
+### Create Worktrees
 1) From the main worktree:
-   git checkout -b main
-   git pull --ff-only  # if remote exists
+```bash
+git checkout -b main
+git pull --ff-only  # if remote exists
+```
 
 2) Create per-agent worktrees:
-   git worktree add ../task-breaker-agent-a -b agent/a
-   git worktree add ../task-breaker-agent-b -b agent/b
+```bash
+git worktree add ../task-breaker-agent-a -b agent/a
+git worktree add ../task-breaker-agent-b -b agent/b
+```
 
-Agent Workflow (per worktree)
+### Agent Workflow (per worktree)
 1) Enter the worktree:
-   cd ../task-breaker-agent-a
+```bash
+cd ../task-breaker-agent-a
+```
 
 2) Sync Python deps:
-   uv sync
+```bash
+uv sync
+```
 
 3) Start Copilot CLI:
-   copilot
+```bash
+copilot
+```
 
 4) Maximize agent capability inside Copilot CLI:
    - /plan <prompt> to get a structured plan before coding
@@ -42,19 +52,23 @@ Agent Workflow (per worktree)
    - Prefer small, focused commits
    - Run relevant checks/tests
 
-Integration Workflow (main worktree)
+### Integration Workflow (main worktree)
 1) Merge each agent branch:
-   git merge agent/a
-   git merge agent/b
+```bash
+git merge agent/a
+git merge agent/b
+```
 
 2) Resolve conflicts and rerun checks.
 
 3) Clean up worktrees after merge:
-   git worktree remove ../task-breaker-agent-a
-   git worktree remove ../task-breaker-agent-b
-   git branch -d agent/a agent/b
+```bash
+git worktree remove ../task-breaker-agent-a
+git worktree remove ../task-breaker-agent-b
+git branch -d agent/a agent/b
+```
 
-Coordination Tips
+### Coordination Tips
 - One agent per worktree to avoid file contention.
 - Keep uv.lock changes isolated per branch; resolve lock conflicts in main.
 - Use clear branch names and session names to track ownership.
