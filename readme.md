@@ -26,12 +26,31 @@ uv sync
   --storage PATH         Override storage path
   --model MODEL          Copilot model (default: gpt-4.1)
   --no-workiq            Disable WorkIQ MCP server
-  --workiq-command CMD   Override WorkIQ command (default: npx)
-  --workiq-args ...      Override WorkIQ args (default: -y @microsoft/workiq mcp)
+  --workiq-command CMD   Override WorkIQ command (default: workiq)
+  --workiq-args ...      Override WorkIQ args (default: mcp)
 
 ### WorkIQ notes
+- Install WorkIQ CLI: `npm install -g @microsoft/workiq`
 - First use requires accepting WorkIQ EULA: `workiq accept-eula`
-- If running via npx, ensure Node.js is available
+- To use via npx instead: `--workiq-command npx --workiq-args -y @microsoft/workiq mcp`
+
+### GitHub Copilot CLI notes
+- Install: `npm install -g @github/copilot`
+- The SDK looks for `copilot` in PATH or uses `COPILOT_CLI_PATH` environment variable
+
+#### Windows platform
+On Windows, VS Code installs a `copilot.ps1` bootstrapper that shadows the npm-installed CLI. Python's `subprocess` cannot execute `.ps1` files directly.
+
+**Fix:** Set `COPILOT_CLI_PATH` to point to the npm-installed `.cmd` wrapper:
+
+```powershell
+$env:COPILOT_CLI_PATH = "$env:APPDATA\npm\copilot.cmd"
+```
+
+Or set it permanently:
+```powershell
+[Environment]::SetEnvironmentVariable("COPILOT_CLI_PATH", "$env:APPDATA\npm\copilot.cmd", "User")
+```
 
 ### UV notes
 - `uv sync` will create/update `uv.lock` for pinned versions.
