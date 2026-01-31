@@ -233,14 +233,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--workiq-command",
-        default="npx",
-        help="WorkIQ command (default: npx)",
+        default="workiq",
+        help="WorkIQ command (default: workiq). Use 'npx' with --workiq-args for npx-based invocation.",
     )
     parser.add_argument(
         "--workiq-args",
         nargs="*",
-        default=["-y", "@microsoft/workiq", "mcp"],
-        help="Args for WorkIQ MCP server",
+        default=["mcp"],
+        help="Args for WorkIQ MCP server (default: mcp). For npx: -y @microsoft/workiq mcp",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -255,7 +255,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.set_defaults(func=cmd_add)
 
     list_parser = subparsers.add_parser("list", help="List tasks")
-    list_parser.add_argument("--status", choices=["open", "done"], help="Filter by status")
+    list_parser.add_argument(
+        "--status", choices=["open", "done"], help="Filter by status"
+    )
     list_parser.set_defaults(func=cmd_list)
 
     show_parser = subparsers.add_parser("show", help="Show task detail")
