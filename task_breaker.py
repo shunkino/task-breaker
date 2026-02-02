@@ -13,6 +13,7 @@ from copilot import CopilotClient
 APP_NAME = "task-breaker"
 DEFAULT_MODEL = "gpt-4.1"
 DEFAULT_STORAGE = os.path.expanduser("~/.task-breaker/tasks.json")
+DEFAULT_USAGE_LOG = os.path.expanduser("~/.task-breaker/usage.log")
 
 
 @dataclass
@@ -29,6 +30,26 @@ class Task:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+class UsageLogger:
+    def __init__(self, destination: str, log_path: str) -> None:
+        self.destination = destination
+        self.log_path = log_path
+
+    def emit(self, event: str, payload: Dict[str, Any]) -> None:
+        if self.destination == "off":
+            return
+        record = {"timestamp": now_iso(), "event": event, **payload}
+        line = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+        if self.destination in ("stderr", "both"):
+            print(line, file=sys.stderr)
+        if self.destination in ("file", "both"):
+            directory = os.path.dirname(self.log_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(self.log_path, "a", encoding="utf-8") as handle:
+                handle.write(f"{line}\n")
 
 
 def load_tasks(path: str) -> List[Task]:
@@ -82,9 +103,29 @@ async def breakdown_task(
     use_workiq: bool,
     workiq_command: str,
     workiq_args: List[str],
+    usage_logger: Optional[UsageLogger] = None,
+    source_command: Optional[str] = None,
+    debug: bool = False,
 ) -> List[str]:
-    client = CopilotClient()
+    client_opts: Dict[str, Any] = {}
+    if debug:
+        client_opts["log_level"] = "debug"
+    client = CopilotClient(client_opts)
     await client.start()
+    if usage_logger:
+        usage_logger.emit(
+            "copilot",
+            {"model": model, "source_command": source_command},
+        )
+        if use_workiq:
+            usage_logger.emit(
+                "workiq",
+                {
+                    "command": workiq_command,
+                    "args": workiq_args,
+                    "source_command": source_command,
+                },
+            )
 
     session_config: Dict[str, Any] = {
         "model": model,
@@ -114,6 +155,29 @@ async def breakdown_task(
         }
 
     session = await client.create_session(session_config)
+
+    if debug:
+        def debug_handler(event: Any) -> None:
+            data = event.data
+            mcp_server = getattr(data, "mcp_server_name", None)
+            mcp_tool = getattr(data, "mcp_tool_name", None)
+            tool_name = getattr(data, "tool_name", None)
+            content = getattr(data, "content", None)
+            result = getattr(data, "result", None)
+            parts = [f"[DEBUG] {event.type}"]
+            if mcp_server:
+                parts.append(f"mcp_server={mcp_server}")
+            if mcp_tool:
+                parts.append(f"mcp_tool={mcp_tool}")
+            if tool_name:
+                parts.append(f"tool={tool_name}")
+            if content:
+                parts.append(f"content={content[:200]}..." if len(str(content)) > 200 else f"content={content}")
+            if result:
+                parts.append(f"result={str(result)[:200]}..." if len(str(result)) > 200 else f"result={result}")
+            print(" | ".join(parts), file=sys.stderr)
+        session.on(debug_handler)
+
     response = await session.send_and_wait(
         {
             "prompt": (
@@ -141,6 +205,15 @@ def cmd_add(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task_id = next_task_id(tasks)
     timestamp = now_iso()
+    args.usage_logger.emit(
+        "command",
+        {
+            "name": "add",
+            "breakdown": args.breakdown,
+            "model": args.model if args.breakdown else None,
+            "workiq_enabled": not args.no_workiq if args.breakdown else None,
+        },
+    )
     breakdown: List[str] = []
     if args.breakdown:
         breakdown = asyncio.run(
@@ -150,6 +223,9 @@ def cmd_add(args: argparse.Namespace) -> None:
                 use_workiq=not args.no_workiq,
                 workiq_command=args.workiq_command,
                 workiq_args=args.workiq_args,
+                usage_logger=args.usage_logger,
+                source_command="add",
+                debug=args.debug,
             )
         )
     task = Task(
@@ -169,12 +245,14 @@ def cmd_list(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     if args.status:
         tasks = [task for task in tasks if task.status == args.status]
+    args.usage_logger.emit("command", {"name": "list", "status": args.status})
     print(render_tasks(tasks))
 
 
 def cmd_show(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task = find_task(tasks, args.id)
+    args.usage_logger.emit("command", {"name": "show", "task_id": args.id})
     print(render_task(task))
 
 
@@ -184,6 +262,7 @@ def cmd_complete(args: argparse.Namespace) -> None:
     task.status = "done"
     task.updated_at = now_iso()
     save_tasks(args.storage, tasks)
+    args.usage_logger.emit("command", {"name": "complete", "task_id": args.id})
     print(render_task(task))
 
 
@@ -193,12 +272,25 @@ def cmd_note(args: argparse.Namespace) -> None:
     task.notes = args.note
     task.updated_at = now_iso()
     save_tasks(args.storage, tasks)
+    args.usage_logger.emit(
+        "command",
+        {"name": "note", "task_id": args.id, "note_length": len(args.note)},
+    )
     print(render_task(task))
 
 
 def cmd_breakdown(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task = find_task(tasks, args.id)
+    args.usage_logger.emit(
+        "command",
+        {
+            "name": "breakdown",
+            "task_id": args.id,
+            "model": args.model,
+            "workiq_enabled": not args.no_workiq,
+        },
+    )
     steps = asyncio.run(
         breakdown_task(
             title=task.title,
@@ -206,6 +298,9 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
             use_workiq=not args.no_workiq,
             workiq_command=args.workiq_command,
             workiq_args=args.workiq_args,
+            usage_logger=args.usage_logger,
+            source_command="breakdown",
+            debug=args.debug,
         )
     )
     task.breakdown = steps
@@ -241,6 +336,24 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         default=["mcp"],
         help="Args for WorkIQ MCP server (default: mcp). For npx: -y @microsoft/workiq mcp",
+    )
+    parser.add_argument(
+        "--usage-log",
+        nargs="?",
+        const="stderr",
+        default="off",
+        choices=["off", "stderr", "file", "both"],
+        help="Usage log output: off|stderr|file|both (default: off).",
+    )
+    parser.add_argument(
+        "--usage-log-path",
+        default=DEFAULT_USAGE_LOG,
+        help=f"Usage log file path (default: {DEFAULT_USAGE_LOG})",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging for Copilot SDK and MCP tool execution",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -283,6 +396,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    args.usage_logger = UsageLogger(args.usage_log, args.usage_log_path)
     try:
         args.func(args)
     except KeyError as exc:

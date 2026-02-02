@@ -28,6 +28,8 @@ uv sync
   --no-workiq            Disable WorkIQ MCP server
   --workiq-command CMD   Override WorkIQ command (default: workiq)
   --workiq-args ...      Override WorkIQ args (default: mcp)
+  --usage-log [MODE]     Usage logging: off|stderr|file|both (default: off)
+  --usage-log-path PATH  Usage log file path (default: ~/.task-breaker/usage.log)
 
 ### WorkIQ notes
 - Install WorkIQ CLI: `npm install -g @microsoft/workiq`
