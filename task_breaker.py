@@ -178,10 +178,25 @@ async def breakdown_task(
             print(" | ".join(parts), file=sys.stderr)
         session.on(debug_handler)
 
+    if use_workiq:
+        # First query WorkIQ to get better context about the task
+        await session.send_and_wait(
+            {
+                "prompt": (
+                    f"I need to break down this task: {title}\n\n"
+                    "Before creating a breakdown, use WorkIQ MCP tool to gather relevant context. "
+                    "Search for related work items, documentation, or prior discussions "
+                    "that could inform how to approach this task. "
+                    "Summarize what you find."
+                )
+            }
+        )
+
+    # Now request the breakdown with any context gathered
     response = await session.send_and_wait(
         {
             "prompt": (
-                "Break down this task following the rules above. "
+                "Based on any context gathered, break down this task following the rules above. "
                 "Return ONLY a JSON array of steps. Task: "
                 f"{title}"
             )
@@ -350,12 +365,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_USAGE_LOG,
         help=f"Usage log file path (default: {DEFAULT_USAGE_LOG})",
     )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging for Copilot SDK and MCP tool execution",
-    )
-
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     add_parser = subparsers.add_parser("add", help="Add a new task")
@@ -364,6 +373,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--breakdown",
         action="store_true",
         help="Generate breakdown on add",
+    )
+    add_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging for Copilot SDK and MCP tool execution",
     )
     add_parser.set_defaults(func=cmd_add)
 
@@ -388,6 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     breakdown_parser = subparsers.add_parser("breakdown", help="Break down a task")
     breakdown_parser.add_argument("id", type=int, help="Task id")
+    breakdown_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging for Copilot SDK and MCP tool execution",
+    )
     breakdown_parser.set_defaults(func=cmd_breakdown)
 
     return parser
