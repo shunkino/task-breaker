@@ -15,4 +15,4 @@
 - Keep task storage as JSON and preserve the schema defined by the `Task` dataclass.
 - Timestamps use UTC ISO-8601 via `datetime.now(timezone.utc).isoformat()`.
 - Copilot model default is `gpt-4.1`, overrideable with `--model`.
-- WorkIQ MCP usage is enabled by default and configured through `--workiq-command` (default: `workiq`) and `--workiq-args` (default: `mcp`). For npx usage: `--workiq-command npx --workiq-args -y @microsoft/workiq mcp`.
+- WorkIQ MCP usage is enabled by default and configured through `--workiq-command` (default: `npx`) and `--workiq-args` (default: `-y @microsoft/workiq mcp`).

@@ -144,15 +144,26 @@ async def breakdown_task(
     }
 
     if use_workiq:
+        mcp_command = workiq_command
+        # Flatten args: split any multi-word args so each token is separate
+        mcp_args = [token for arg in workiq_args for token in arg.split()]
+        # Windows needs cmd /c wrapping for npx (and similar) commands
+        # See: https://github.com/github/copilot-sdk/blob/main/docs/mcp/debugging.md#npx-commands
+        if sys.platform == "win32":
+            mcp_args = ["/c", mcp_command] + mcp_args
+            mcp_command = "cmd"
         session_config["mcp_servers"] = {
             "workiq": {
                 "type": "local",
-                "command": workiq_command,
-                "args": workiq_args,
+                "command": mcp_command,
+                "args": mcp_args,
                 "tools": ["*"],
-                "timeout": 60000,
+                "timeout": 180000,
             }
         }
+
+    if debug:
+        print(f"[DEBUG] session_config = {json.dumps(session_config, indent=2)}", file=sys.stderr)
 
     session = await client.create_session(session_config)
 
@@ -180,16 +191,19 @@ async def breakdown_task(
 
     if use_workiq:
         # First query WorkIQ to get better context about the task
+        # WorkIQ tool calls can take 2+ minutes; use a longer timeout than the default
         await session.send_and_wait(
             {
                 "prompt": (
                     f"I need to break down this task: {title}\n\n"
                     "Before creating a breakdown, use WorkIQ MCP tool to gather relevant context. "
+                    "The tool name of WorkIQ MCP tool is exposed as 'ask_work_iq'. Be sure to use this."
                     "Search for related work items, documentation, or prior discussions "
                     "that could inform how to approach this task. "
                     "Summarize what you find."
                 )
-            }
+            },
+            timeout=180000,
         )
 
     # Now request the breakdown with any context gathered
@@ -332,27 +346,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Path to tasks file (default: {DEFAULT_STORAGE})",
     )
     parser.add_argument(
-        "--model",
-        default=DEFAULT_MODEL,
-        help=f"Copilot model (default: {DEFAULT_MODEL})",
-    )
-    parser.add_argument(
-        "--no-workiq",
-        action="store_true",
-        help="Disable WorkIQ MCP server usage",
-    )
-    parser.add_argument(
-        "--workiq-command",
-        default="workiq",
-        help="WorkIQ command (default: workiq). Use 'npx' with --workiq-args for npx-based invocation.",
-    )
-    parser.add_argument(
-        "--workiq-args",
-        nargs="*",
-        default=["mcp"],
-        help="Args for WorkIQ MCP server (default: mcp). For npx: -y @microsoft/workiq mcp",
-    )
-    parser.add_argument(
         "--usage-log",
         nargs="?",
         const="stderr",
@@ -378,6 +371,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="Enable debug logging for Copilot SDK and MCP tool execution",
+    )
+    add_parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Copilot model (default: {DEFAULT_MODEL})",
+    )
+    add_parser.add_argument(
+        "--no-workiq",
+        action="store_true",
+        help="Disable WorkIQ MCP server usage",
+    )
+    add_parser.add_argument(
+        "--workiq-command",
+        default="npx",
+        help="WorkIQ command (default: npx).",
+    )
+    add_parser.add_argument(
+        "--workiq-args",
+        nargs="*",
+        default=["-y", "@microsoft/workiq", "mcp"],
+        help="Args for WorkIQ MCP server (default: -y @microsoft/workiq mcp).",
     )
     add_parser.set_defaults(func=cmd_add)
 
@@ -406,6 +420,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="Enable debug logging for Copilot SDK and MCP tool execution",
+    )
+    breakdown_parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Copilot model (default: {DEFAULT_MODEL})",
+    )
+    breakdown_parser.add_argument(
+        "--no-workiq",
+        action="store_true",
+        help="Disable WorkIQ MCP server usage",
+    )
+    breakdown_parser.add_argument(
+        "--workiq-command",
+        default="npx",
+        help="WorkIQ command (default: npx).",
+    )
+    breakdown_parser.add_argument(
+        "--workiq-args",
+        nargs="*",
+        default=["-y", "@microsoft/workiq", "mcp"],
+        help="Args for WorkIQ MCP server (default: -y @microsoft/workiq mcp).",
     )
     breakdown_parser.set_defaults(func=cmd_breakdown)
 
