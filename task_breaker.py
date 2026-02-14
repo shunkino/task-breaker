@@ -3,12 +3,15 @@ import argparse
 import asyncio
 import json
 import os
+import re
+import shutil
 import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from copilot import CopilotClient
+from copilot.generated.session_events import SessionEventType
 
 APP_NAME = "task-breaker"
 DEFAULT_MODEL = "gpt-4.1"
@@ -95,6 +98,13 @@ def render_tasks(tasks: List[Task]) -> str:
     if not tasks:
         return "No tasks yet."
     return "\n\n".join(render_task(task) for task in tasks)
+
+
+def slugify(text: str, max_words: int = 5) -> str:
+    """Turn text into a short lowercase slug suitable for directory names."""
+    text = re.sub(r"[^\w\s-]", "", text.lower())
+    words = text.split()[:max_words]
+    return "-".join(words) or "task"
 
 
 async def breakdown_task(
@@ -230,6 +240,271 @@ async def breakdown_task(
     return [str(step).strip() for step in steps if str(step).strip()]
 
 
+def _make_permission_handler(project_dir: str):
+    """Create a permission handler that auto-approves read/write in the project dir."""
+    norm_project = os.path.normcase(os.path.abspath(project_dir))
+
+    def _handler(request: dict, context: dict) -> dict:
+        kind = request.get("kind", "unknown")
+        path = request.get("path", "")
+
+        # Auto-approve read/write operations inside the project directory
+        if kind in ("read", "write") and path:
+            norm_path = os.path.normcase(os.path.abspath(path))
+            if norm_path.startswith(norm_project):
+                return {"kind": "approved"}
+
+        # Everything else: ask the user
+        details: List[str] = []
+        for key, value in request.items():
+            if key in ("kind", "toolCallId"):
+                continue
+            details.append(f"  {key}: {value}")
+        print(f"\n[Permission requested] {kind}")
+        if details:
+            print("\n".join(details))
+        answer = input("Allow this action? [y/N]: ").strip().lower()
+        if answer in ("y", "yes"):
+            return {"kind": "approved"}
+        return {"kind": "denied-interactively-by-user"}
+
+    return _handler
+
+
+async def implement_task(
+    task: Task,
+    model: str,
+    use_workiq: bool = True,
+    workiq_command: str = "npx",
+    workiq_args: Optional[List[str]] = None,
+    debug: bool = False,
+) -> Tuple[str, bool]:
+    """Ask GitHub Copilot to implement a task inside a new project directory.
+
+    Returns (project_dir, success) where success is False when the agent
+    could not fully implement the task.
+    """
+    dir_name = f"{task.id}-{slugify(task.title)}"
+    project_dir = os.path.abspath(dir_name)
+    os.makedirs(project_dir, exist_ok=True)
+
+    client_opts: Dict[str, Any] = {}
+    if debug:
+        client_opts["log_level"] = "debug"
+    client = CopilotClient(client_opts)
+    await client.start()
+
+    workiq_instruction = ""
+    if use_workiq:
+        workiq_instruction = (
+            " When you need information about internal tools, SDKs, APIs, "
+            "or packages, use WorkIQ (ask_work_iq) to look up documentation "
+            "and context BEFORE attempting to install or fetch external resources."
+        )
+
+    session_config: Dict[str, Any] = {
+        "model": model,
+        "working_directory": project_dir,
+        "on_permission_request": _make_permission_handler(project_dir),
+        "system_message": {
+            "content": (
+                "You are a software engineer that implements projects. "
+                "You MUST create all files inside the current working directory. "
+                "Create a complete, runnable project with appropriate structure, "
+                "including a README.md explaining how to build and run it."
+                + workiq_instruction
+            )
+        },
+    }
+
+    if use_workiq:
+        _workiq_args = workiq_args or ["-y", "@microsoft/workiq", "mcp"]
+        mcp_command = workiq_command
+        mcp_args = [token for arg in _workiq_args for token in arg.split()]
+        if sys.platform == "win32":
+            mcp_args = ["/c", mcp_command] + mcp_args
+            mcp_command = "cmd"
+        session_config["mcp_servers"] = {
+            "workiq": {
+                "type": "local",
+                "command": mcp_command,
+                "args": mcp_args,
+                "tools": ["*"],
+                "timeout": 180000,
+            }
+        }
+
+    if debug:
+        print(
+            f"[DEBUG] implement session_config = {json.dumps({k: v for k, v in session_config.items() if k != 'on_permission_request'}, indent=2)}",
+            file=sys.stderr,
+        )
+
+    session = await client.create_session(session_config)
+
+    errors: List[str] = []
+
+    def _track_errors(event: Any) -> None:
+        data = event.data
+        if event.type == SessionEventType.SESSION_ERROR:
+            error_type = getattr(data, "error_type", "")
+            message = getattr(data, "message", "")
+            error = getattr(data, "error", "")
+            parts = [p for p in [error_type, message, str(error)] if p]
+            msg = " | ".join(parts) or "Unknown session error"
+            errors.append(msg)
+            print(f"\n[Session Error] {msg}", file=sys.stderr)
+
+    session.on(_track_errors)
+
+    if debug:
+        def debug_handler(event: Any) -> None:
+            data = event.data
+            parts = [f"[DEBUG-IMPL] {event.type}"]
+            # Error details
+            error_type = getattr(data, "error_type", None)
+            message = getattr(data, "message", None)
+            error = getattr(data, "error", None)
+            if error_type:
+                parts.append(f"error_type={error_type}")
+            if message:
+                parts.append(f"message={message}")
+            if error:
+                parts.append(f"error={str(error)[:300]}")
+            # Tool details
+            mcp_server = getattr(data, "mcp_server_name", None)
+            mcp_tool = getattr(data, "mcp_tool_name", None)
+            tool_name = getattr(data, "tool_name", None)
+            if mcp_server:
+                parts.append(f"mcp_server={mcp_server}")
+            if mcp_tool:
+                parts.append(f"mcp_tool={mcp_tool}")
+            if tool_name:
+                parts.append(f"tool={tool_name}")
+            # Content / result
+            content = getattr(data, "content", None)
+            result = getattr(data, "result", None)
+            if content:
+                parts.append(
+                    f"content={content[:200]}..."
+                    if len(str(content)) > 200
+                    else f"content={content}"
+                )
+            if result:
+                parts.append(
+                    f"result={str(result)[:200]}..."
+                    if len(str(result)) > 200
+                    else f"result={result}"
+                )
+            print(" | ".join(parts), file=sys.stderr)
+        session.on(debug_handler)
+
+    # Build the implementation prompt
+    if task.breakdown:
+        steps_text = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(task.breakdown))
+        impl_detail = (
+            f"Task: {task.title}\n\n"
+            f"Breakdown steps:\n{steps_text}\n\n"
+            "Create a complete project with all necessary files. "
+            "Follow the breakdown steps as a guide for the implementation."
+        )
+    else:
+        impl_detail = (
+            f"Task: {task.title}\n\n"
+            "Create a complete project with all necessary files."
+        )
+
+    print(f"Implementing task in: {project_dir}")
+    try:
+        # Step 1: If WorkIQ is available, query it first for grounding
+        if use_workiq:
+            print("Querying WorkIQ for context...")
+            await session.send_and_wait(
+                {
+                    "prompt": (
+                        f"I need to implement this task: {task.title}\n\n"
+                        "Before writing any code, use the WorkIQ MCP tool (ask_work_iq) "
+                        "to research the relevant SDKs, APIs, packages, project structure, "
+                        "and any documentation or samples that exist for this topic. "
+                        "The tool name is exposed as 'ask_work_iq'. You MUST call it now. "
+                        "Do NOT use glob, grep, or other file search tools for this research step. "
+                        "Summarize what you find."
+                    )
+                },
+                timeout=180000,
+            )
+
+        # Step 2: Now implement based on context gathered
+        response = await session.send_and_wait(
+            {
+                "prompt": (
+                    "Based on the context gathered above, implement the following. "
+                    "Use the information from WorkIQ to ensure you use the correct "
+                    "package names, APIs, and project structure. "
+                    "Do NOT fabricate URLs or package names — only use what was found "
+                    "in the research step. "
+                    "You must create ALL files in a single turn — do NOT stop after "
+                    "planning or creating just one file. Keep going until every file "
+                    "for the project is written.\n\n"
+                    + impl_detail
+                )
+            },
+            timeout=600,
+        )
+
+        # Step 3: Continue prompting if the agent stopped before creating files
+        max_continuations = 5
+        for i in range(max_continuations):
+            created = [f for f in os.listdir(project_dir) if not f.startswith(".")]
+            last_content = response.data.content if response and response.data else ""
+            # Stop if files were created and content doesn't say "next I will"
+            if created:
+                break
+            # Stop if the agent explicitly says it can't proceed
+            if any(kw in last_content.lower() for kw in [
+                "cannot", "unable", "could not", "please clarify", "please provide",
+            ]):
+                break
+            print(f"Continuing implementation (step {i + 2})...")
+            response = await session.send_and_wait(
+                {
+                    "prompt": (
+                        "You have not created any project files yet. "
+                        "Continue implementing — create all the project files now. "
+                        "Do NOT just plan or describe what you will do. "
+                        "Actually write and create the files."
+                    )
+                },
+                timeout=300,
+            )
+    except Exception as exc:
+        errors.append(str(exc))
+        response = None
+
+    await session.destroy()
+    await client.stop()
+
+    content = response.data.content if response and response.data else ""
+
+    # Heuristic: check whether any real file was created in the project dir
+    created_files = [f for f in os.listdir(project_dir) if not f.startswith(".")]
+    failure_keywords = ["fail", "unable", "could not", "cannot", "unavailable", "error"]
+    content_signals_failure = any(kw in content.lower() for kw in failure_keywords)
+
+    success = bool(created_files) and not errors
+    if not created_files or (content_signals_failure and not created_files):
+        success = False
+
+    if not success and content:
+        print(f"\nAgent response:\n{content}")
+    if not success and errors:
+        print("\nErrors encountered:", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
+
+    return project_dir, success
+
+
 def cmd_add(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task_id = next_task_id(tasks)
@@ -268,6 +543,36 @@ def cmd_add(args: argparse.Namespace) -> None:
     tasks.append(task)
     save_tasks(args.storage, tasks)
     print(render_task(task))
+    if args.implement:
+        project_dir, success = asyncio.run(
+            implement_task(
+                task=task,
+                model=args.model,
+                use_workiq=not args.no_workiq,
+                workiq_command=args.workiq_command,
+                workiq_args=args.workiq_args,
+                debug=args.debug,
+            )
+        )
+        if success:
+            print(f"Project created at: {project_dir}")
+        else:
+            print(
+                "\nError: Implementation did not fully complete.",
+                file=sys.stderr,
+            )
+            answer = input(
+                "Keep the task anyway? [y/N]: "
+            ).strip().lower()
+            if answer not in ("y", "yes"):
+                tasks.remove(task)
+                save_tasks(args.storage, tasks)
+                # Clean up the (possibly empty) project directory
+                if os.path.isdir(project_dir):
+                    shutil.rmtree(project_dir)
+                print("Task removed.")
+            else:
+                print(f"Task kept. Partial output at: {project_dir}")
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -336,6 +641,37 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
     task.updated_at = now_iso()
     save_tasks(args.storage, tasks)
     print(render_task(task))
+    if args.implement:
+        project_dir, success = asyncio.run(
+            implement_task(
+                task=task,
+                model=args.model,
+                use_workiq=not args.no_workiq,
+                workiq_command=args.workiq_command,
+                workiq_args=args.workiq_args,
+                debug=args.debug,
+            )
+        )
+        if success:
+            print(f"Project created at: {project_dir}")
+        else:
+            print(
+                "\nError: Implementation did not fully complete.",
+                file=sys.stderr,
+            )
+            answer = input(
+                "Keep the task anyway? [y/N]: "
+            ).strip().lower()
+            if answer not in ("y", "yes"):
+                # Revert the breakdown update
+                task.breakdown = []
+                task.updated_at = now_iso()
+                save_tasks(args.storage, tasks)
+                if os.path.isdir(project_dir):
+                    shutil.rmtree(project_dir)
+                print("Implementation output removed. Task breakdown cleared.")
+            else:
+                print(f"Task kept. Partial output at: {project_dir}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -376,6 +712,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         default=DEFAULT_MODEL,
         help=f"Copilot model (default: {DEFAULT_MODEL})",
+    )
+    add_parser.add_argument(
+        "--implement",
+        action="store_true",
+        help="Ask Copilot to implement the task in a new project directory",
     )
     add_parser.add_argument(
         "--no-workiq",
@@ -425,6 +766,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         default=DEFAULT_MODEL,
         help=f"Copilot model (default: {DEFAULT_MODEL})",
+    )
+    breakdown_parser.add_argument(
+        "--implement",
+        action="store_true",
+        help="Ask Copilot to implement the task in a new project directory",
     )
     breakdown_parser.add_argument(
         "--no-workiq",
