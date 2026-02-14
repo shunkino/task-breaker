@@ -1,5 +1,17 @@
 ## Task Breaker CLI
 
+### Background
+
+This project was born out of my personal experience with daily todo lists. I often couldn't finish all my tasks in a given day, and they would quickly stack up — eventually making it impossible to keep up with the growing number of todos.
+
+My assumption is that the reason tasks pile up is that they aren't broken down into small enough chunks. To solve this, I came up with the idea of automatic task breakdown using AI tools. I utilized [WorkIQ](https://github.com/microsoft/workiq) to let the agent understand my situation correctly, and GitHub Copilot to allow it to even create simple apps or fix issues in code automatically.
+
+**User scenario:** When a user has a todo task that hasn't been finished for *x* days, the Task Breaker app will ask the user if they want to break down that task into smaller pieces.
+
+**Goal:** Automatically break down tasks into smaller ones if they remain unresolved for a predefined number of days. For example, if the user sets the timer to 3 days and a registered task is not finished within that period, this tool will automatically kick in and split the task into smaller, more actionable chunks. This way, the user can more easily start working on the task, increasing the probability that it moves forward. The task status also becomes more granular, giving better visibility into progress.
+
+> **Note:** This project is still in a very experimental stage — the automatic breakdown feature is not yet implemented.
+
 ### Prereqs
 - Python 3.10+
 - uv (Python package manager)
