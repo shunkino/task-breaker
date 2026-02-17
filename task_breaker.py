@@ -100,6 +100,78 @@ def render_tasks(tasks: List[Task]) -> str:
     return "\n\n".join(render_task(task) for task in tasks)
 
 
+def resolve_copilot_cli_path(debug: bool = False) -> Optional[str]:
+    """On Windows, resolve the full path to the copilot CLI.
+
+    subprocess.Popen uses CreateProcess which cannot find .bat/.cmd/.ps1
+    files by bare name — it only finds .exe. We use shutil.which (which
+    respects PATHEXT) to resolve the full path and pass it explicitly.
+    """
+    if sys.platform != "win32":
+        if debug:
+            print(
+                "[DEBUG] resolve_copilot_cli_path: not Windows, skipping",
+                file=sys.stderr,
+            )
+        return None
+    # Honour explicit override
+    env_path = os.environ.get("COPILOT_CLI_PATH")
+    if env_path:
+        if debug:
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: COPILOT_CLI_PATH is set to '{env_path}'",
+                file=sys.stderr,
+            )
+        return None
+    # Resolve via shutil.which (respects PATHEXT: .cmd, .bat, .exe, etc.)
+    found = shutil.which("copilot")
+    if debug:
+        print(
+            f"[DEBUG] resolve_copilot_cli_path: shutil.which('copilot') = '{found}'",
+            file=sys.stderr,
+        )
+    if found:
+        # Always return the full path so subprocess.Popen/CreateProcess can
+        # launch .bat/.cmd files (it can when given an absolute path).
+        if debug:
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: using resolved path '{found}'",
+                file=sys.stderr,
+            )
+        return found
+    # Fallback: try the npm global .cmd wrapper directly
+    appdata = os.environ.get("APPDATA", "")
+    if debug:
+        print(
+            f"[DEBUG] resolve_copilot_cli_path: APPDATA = '{appdata}'", file=sys.stderr
+        )
+    if appdata:
+        cmd_path = os.path.join(appdata, "npm", "copilot.cmd")
+        exists = os.path.isfile(cmd_path)
+        if debug:
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: checking '{cmd_path}' exists={exists}",
+                file=sys.stderr,
+            )
+        if exists:
+            return cmd_path
+    # List what's actually in the npm directory for diagnostics
+    if debug:
+        npm_dir = os.path.join(appdata, "npm") if appdata else ""
+        if npm_dir and os.path.isdir(npm_dir):
+            copilot_files = [f for f in os.listdir(npm_dir) if "copilot" in f.lower()]
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: copilot-related files in npm dir: {copilot_files}",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: npm dir '{npm_dir}' not found",
+                file=sys.stderr,
+            )
+    return None
+
+
 def slugify(text: str, max_words: int = 5) -> str:
     """Turn text into a short lowercase slug suitable for directory names."""
     text = re.sub(r"[^\w\s-]", "", text.lower())
@@ -117,9 +189,15 @@ async def breakdown_task(
     source_command: Optional[str] = None,
     debug: bool = False,
 ) -> List[str]:
+    print(f"Breaking down task: {workiq_args}")
     client_opts: Dict[str, Any] = {}
     if debug:
         client_opts["log_level"] = "debug"
+    cli_path = resolve_copilot_cli_path(debug=debug)
+    if cli_path:
+        client_opts["cli_path"] = cli_path
+    if debug:
+        print(f"[DEBUG] breakdown_task: client_opts = {client_opts}", file=sys.stderr)
     client = CopilotClient(client_opts)
     await client.start()
     if usage_logger:
@@ -153,6 +231,7 @@ async def breakdown_task(
         },
     }
 
+    print("we are here")
     if use_workiq:
         mcp_command = workiq_command
         # Flatten args: split any multi-word args so each token is separate
@@ -160,6 +239,7 @@ async def breakdown_task(
         # Windows needs cmd /c wrapping for npx (and similar) commands
         # See: https://github.com/github/copilot-sdk/blob/main/docs/mcp/debugging.md#npx-commands
         if sys.platform == "win32":
+            print(f"mcp_command on Windows: {mcp_command} {mcp_args}")
             mcp_args = ["/c", mcp_command] + mcp_args
             mcp_command = "cmd"
         session_config["mcp_servers"] = {
@@ -173,11 +253,15 @@ async def breakdown_task(
         }
 
     if debug:
-        print(f"[DEBUG] session_config = {json.dumps(session_config, indent=2)}", file=sys.stderr)
+        print(
+            f"[DEBUG] session_config = {json.dumps(session_config, indent=2)}",
+            file=sys.stderr,
+        )
 
     session = await client.create_session(session_config)
 
     if debug:
+
         def debug_handler(event: Any) -> None:
             data = event.data
             mcp_server = getattr(data, "mcp_server_name", None)
@@ -193,10 +277,19 @@ async def breakdown_task(
             if tool_name:
                 parts.append(f"tool={tool_name}")
             if content:
-                parts.append(f"content={content[:200]}..." if len(str(content)) > 200 else f"content={content}")
+                parts.append(
+                    f"content={content[:200]}..."
+                    if len(str(content)) > 200
+                    else f"content={content}"
+                )
             if result:
-                parts.append(f"result={str(result)[:200]}..." if len(str(result)) > 200 else f"result={result}")
+                parts.append(
+                    f"result={str(result)[:200]}..."
+                    if len(str(result)) > 200
+                    else f"result={result}"
+                )
             print(" | ".join(parts), file=sys.stderr)
+
         session.on(debug_handler)
 
     if use_workiq:
@@ -291,6 +384,11 @@ async def implement_task(
     client_opts: Dict[str, Any] = {}
     if debug:
         client_opts["log_level"] = "debug"
+    cli_path = resolve_copilot_cli_path(debug=debug)
+    if cli_path:
+        client_opts["cli_path"] = cli_path
+    if debug:
+        print(f"[DEBUG] implement_task: client_opts = {client_opts}", file=sys.stderr)
     client = CopilotClient(client_opts)
     await client.start()
 
@@ -358,6 +456,7 @@ async def implement_task(
     session.on(_track_errors)
 
     if debug:
+
         def debug_handler(event: Any) -> None:
             data = event.data
             parts = [f"[DEBUG-IMPL] {event.type}"]
@@ -397,6 +496,7 @@ async def implement_task(
                     else f"result={result}"
                 )
             print(" | ".join(parts), file=sys.stderr)
+
         session.on(debug_handler)
 
     # Build the implementation prompt
@@ -445,8 +545,7 @@ async def implement_task(
                     "in the research step. "
                     "You must create ALL files in a single turn — do NOT stop after "
                     "planning or creating just one file. Keep going until every file "
-                    "for the project is written.\n\n"
-                    + impl_detail
+                    "for the project is written.\n\n" + impl_detail
                 )
             },
             timeout=180000,
@@ -461,9 +560,16 @@ async def implement_task(
             if created:
                 break
             # Stop if the agent explicitly says it can't proceed
-            if any(kw in last_content.lower() for kw in [
-                "cannot", "unable", "could not", "please clarify", "please provide",
-            ]):
+            if any(
+                kw in last_content.lower()
+                for kw in [
+                    "cannot",
+                    "unable",
+                    "could not",
+                    "please clarify",
+                    "please provide",
+                ]
+            ):
                 break
             print(f"Continuing implementation (step {i + 2})...")
             response = await session.send_and_wait(
@@ -561,9 +667,7 @@ def cmd_add(args: argparse.Namespace) -> None:
                 "\nError: Implementation did not fully complete.",
                 file=sys.stderr,
             )
-            answer = input(
-                "Keep the task anyway? [y/N]: "
-            ).strip().lower()
+            answer = input("Keep the task anyway? [y/N]: ").strip().lower()
             if answer not in ("y", "yes"):
                 tasks.remove(task)
                 save_tasks(args.storage, tasks)
@@ -659,9 +763,7 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
                 "\nError: Implementation did not fully complete.",
                 file=sys.stderr,
             )
-            answer = input(
-                "Keep the task anyway? [y/N]: "
-            ).strip().lower()
+            answer = input("Keep the task anyway? [y/N]: ").strip().lower()
             if answer not in ("y", "yes"):
                 # Revert the breakdown update
                 task.breakdown = []
