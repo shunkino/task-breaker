@@ -189,7 +189,6 @@ async def breakdown_task(
     source_command: Optional[str] = None,
     debug: bool = False,
 ) -> List[str]:
-    print(f"Breaking down task: {workiq_args}")
     client_opts: Dict[str, Any] = {}
     if debug:
         client_opts["log_level"] = "debug"
@@ -231,7 +230,6 @@ async def breakdown_task(
         },
     }
 
-    print("we are here")
     if use_workiq:
         mcp_command = workiq_command
         # Flatten args: split any multi-word args so each token is separate
@@ -239,7 +237,6 @@ async def breakdown_task(
         # Windows needs cmd /c wrapping for npx (and similar) commands
         # See: https://github.com/github/copilot-sdk/blob/main/docs/mcp/debugging.md#npx-commands
         if sys.platform == "win32":
-            print(f"mcp_command on Windows: {mcp_command} {mcp_args}")
             mcp_args = ["/c", mcp_command] + mcp_args
             mcp_command = "cmd"
         session_config["mcp_servers"] = {
