@@ -449,7 +449,7 @@ async def implement_task(
                     + impl_detail
                 )
             },
-            timeout=600,
+            timeout=180000,
         )
 
         # Step 3: Continue prompting if the agent stopped before creating files
@@ -475,7 +475,7 @@ async def implement_task(
                         "Actually write and create the files."
                     )
                 },
-                timeout=300,
+                timeout=180000,
             )
     except Exception as exc:
         errors.append(str(exc))
