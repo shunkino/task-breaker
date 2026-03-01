@@ -17,6 +17,7 @@ APP_NAME = "task-breaker"
 DEFAULT_MODEL = "gpt-4.1"
 DEFAULT_STORAGE = os.path.expanduser("~/.task-breaker/tasks.json")
 DEFAULT_USAGE_LOG = os.path.expanduser("~/.task-breaker/usage.log")
+DEFAULT_MAX_LEVEL = 3
 
 
 @dataclass
@@ -29,6 +30,10 @@ class Task:
     breakdown: List[str]
     notes: Optional[str] = None
     source: Optional[str] = None
+    atomic: bool = False
+    level: int = 0
+    parent_id: Optional[int] = None
+    children_ids: Optional[List[int]] = None
 
 
 def now_iso() -> str:
@@ -82,6 +87,15 @@ def find_task(tasks: List[Task], task_id: int) -> Task:
 
 def render_task(task: Task) -> str:
     lines = [f"[{task.id}] {task.title}", f"  status: {task.status}"]
+    if task.atomic:
+        lines.append("  atomic: yes")
+    if task.level > 0:
+        lines.append(f"  level: {task.level}")
+    if task.parent_id is not None:
+        lines.append(f"  parent: #{task.parent_id}")
+    if task.children_ids:
+        ids_str = ", ".join(f"#{cid}" for cid in task.children_ids)
+        lines.append(f"  children: {ids_str}")
     if task.breakdown:
         lines.append("  breakdown:")
         for step in task.breakdown:
@@ -644,6 +658,25 @@ def cmd_add(args: argparse.Namespace) -> None:
         breakdown=breakdown,
     )
     tasks.append(task)
+    if breakdown:
+        max_level = getattr(args, "max_level", DEFAULT_MAX_LEVEL)
+        children_ids: List[int] = []
+        for step in breakdown:
+            child_id = next_task_id(tasks)
+            child = Task(
+                id=child_id,
+                title=step,
+                status="open",
+                created_at=timestamp,
+                updated_at=timestamp,
+                breakdown=[],
+                level=task.level + 1,
+                parent_id=task.id,
+                atomic=task.level + 1 >= max_level,
+            )
+            tasks.append(child)
+            children_ids.append(child_id)
+        task.children_ids = children_ids
     save_tasks(args.storage, tasks)
     print(render_task(task))
     if args.implement:
@@ -717,6 +750,20 @@ def cmd_note(args: argparse.Namespace) -> None:
 def cmd_breakdown(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task = find_task(tasks, args.id)
+    max_level = getattr(args, "max_level", DEFAULT_MAX_LEVEL)
+    if task.atomic:
+        print(
+            f"Task {task.id} is marked as atomic and cannot be broken down further.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if task.level >= max_level:
+        print(
+            f"Task {task.id} is at level {task.level} (max: {max_level}). "
+            "Cannot break down further.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     args.usage_logger.emit(
         "command",
         {
@@ -740,6 +787,24 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
     )
     task.breakdown = steps
     task.updated_at = now_iso()
+    timestamp = now_iso()
+    children_ids: List[int] = []
+    for step in steps:
+        child_id = next_task_id(tasks)
+        child = Task(
+            id=child_id,
+            title=step,
+            status="open",
+            created_at=timestamp,
+            updated_at=timestamp,
+            breakdown=[],
+            level=task.level + 1,
+            parent_id=task.id,
+            atomic=task.level + 1 >= max_level,
+        )
+        tasks.append(child)
+        children_ids.append(child_id)
+    task.children_ids = children_ids
     save_tasks(args.storage, tasks)
     print(render_task(task))
     if args.implement:
@@ -833,6 +898,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=["-y", "@microsoft/workiq", "mcp"],
         help="Args for WorkIQ MCP server (default: -y @microsoft/workiq mcp).",
     )
+    add_parser.add_argument(
+        "--max-level",
+        type=int,
+        default=DEFAULT_MAX_LEVEL,
+        help=f"Maximum breakdown depth (default: {DEFAULT_MAX_LEVEL})",
+    )
     add_parser.set_defaults(func=cmd_add)
 
     list_parser = subparsers.add_parser("list", help="List tasks")
@@ -886,6 +957,12 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         default=["-y", "@microsoft/workiq", "mcp"],
         help="Args for WorkIQ MCP server (default: -y @microsoft/workiq mcp).",
+    )
+    breakdown_parser.add_argument(
+        "--max-level",
+        type=int,
+        default=DEFAULT_MAX_LEVEL,
+        help=f"Maximum breakdown depth (default: {DEFAULT_MAX_LEVEL})",
     )
     breakdown_parser.set_defaults(func=cmd_breakdown)
 
