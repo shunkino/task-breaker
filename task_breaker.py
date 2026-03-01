@@ -85,6 +85,35 @@ def find_task(tasks: List[Task], task_id: int) -> Task:
     raise KeyError(f"Task {task_id} not found")
 
 
+def create_child_tasks(
+    tasks: List[Task],
+    parent: Task,
+    steps: List[str],
+    max_level: int,
+    timestamp: str,
+) -> List[int]:
+    """Create child Task objects from breakdown steps and return their IDs."""
+    children_ids: List[int] = []
+    child_level = parent.level + 1
+    for step in steps:
+        child_id = next_task_id(tasks)
+        child = Task(
+            id=child_id,
+            title=step,
+            status="open",
+            created_at=timestamp,
+            updated_at=timestamp,
+            breakdown=[],
+            level=child_level,
+            parent_id=parent.id,
+            atomic=child_level >= max_level,
+        )
+        tasks.append(child)
+        children_ids.append(child_id)
+    parent.children_ids = children_ids
+    return children_ids
+
+
 def render_task(task: Task) -> str:
     lines = [f"[{task.id}] {task.title}", f"  status: {task.status}"]
     if task.atomic:
@@ -659,24 +688,7 @@ def cmd_add(args: argparse.Namespace) -> None:
     )
     tasks.append(task)
     if breakdown:
-        max_level = getattr(args, "max_level", DEFAULT_MAX_LEVEL)
-        children_ids: List[int] = []
-        for step in breakdown:
-            child_id = next_task_id(tasks)
-            child = Task(
-                id=child_id,
-                title=step,
-                status="open",
-                created_at=timestamp,
-                updated_at=timestamp,
-                breakdown=[],
-                level=task.level + 1,
-                parent_id=task.id,
-                atomic=task.level + 1 >= max_level,
-            )
-            tasks.append(child)
-            children_ids.append(child_id)
-        task.children_ids = children_ids
+        create_child_tasks(tasks, task, breakdown, args.max_level, timestamp)
     save_tasks(args.storage, tasks)
     print(render_task(task))
     if args.implement:
@@ -786,25 +798,9 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
         )
     )
     task.breakdown = steps
-    task.updated_at = now_iso()
     timestamp = now_iso()
-    children_ids: List[int] = []
-    for step in steps:
-        child_id = next_task_id(tasks)
-        child = Task(
-            id=child_id,
-            title=step,
-            status="open",
-            created_at=timestamp,
-            updated_at=timestamp,
-            breakdown=[],
-            level=task.level + 1,
-            parent_id=task.id,
-            atomic=task.level + 1 >= max_level,
-        )
-        tasks.append(child)
-        children_ids.append(child_id)
-    task.children_ids = children_ids
+    task.updated_at = timestamp
+    create_child_tasks(tasks, task, steps, args.max_level, timestamp)
     save_tasks(args.storage, tasks)
     print(render_task(task))
     if args.implement:
