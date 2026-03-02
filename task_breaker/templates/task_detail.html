@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Task #{{ task.id }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ul>
+    <li><a href="/">Tasks</a></li>
+    <li>Task #{{ task.id }}</li>
+  </ul>
+</nav>
+
+<article>
+  <header>
+    <h2>{{ task.title }}</h2>
+    <div>
+      {% if task.status == "done" %}
+        <mark class="status-done">done</mark>
+      {% else %}
+        <mark class="status-open">open</mark>
+      {% endif %}
+      {% if task.atomic %}<mark>🔒 atomic</mark>{% endif %}
+      <small>Level {{ task.level }}</small>
+      {% if task.parent_id and parent %}
+        &nbsp;·&nbsp; Parent: <a href="/tasks/{{ parent.id }}">#{{ parent.id }} {{ parent.title }}</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if task.children_ids %}
+  <section>
+    <h4>Children</h4>
+    <ul>
+      {% for child in children %}
+      <li><a href="/tasks/{{ child.id }}">#{{ child.id }} {{ child.title }}</a>
+        <small>
+          {% if child.status == "done" %}✓{% else %}○{% endif %}
+        </small>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if task.breakdown %}
+  <section>
+    <h4>Breakdown steps</h4>
+    <ol>
+      {% for step in task.breakdown %}
+      <li>{{ step }}</li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% else %}
+  <section>
+    <p><em>No breakdown yet.</em></p>
+    {% if not task.atomic and task.status == "open" %}
+    <form action="/tasks/{{ task.id }}/breakdown" method="post">
+      <button type="submit">🤖 Break down with AI</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section>
+    <h4>Notes</h4>
+    <form action="/tasks/{{ task.id }}/note" method="post">
+      <textarea name="note" rows="3" placeholder="Add a note…">{{ task.notes or '' }}</textarea>
+      <button type="submit" class="outline">Save note</button>
+    </form>
+  </section>
+
+  <footer>
+    <small>Created: {{ task.created_at }} &nbsp;·&nbsp; Updated: {{ task.updated_at }}</small>
+    {% if task.status == "open" %}
+    &nbsp;
+    <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
+      <button type="submit" class="secondary">✓ Mark complete</button>
+    </form>
+    {% endif %}
+  </footer>
+</article>
+{% endblock %}

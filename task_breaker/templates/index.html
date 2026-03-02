@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Tasks{% endblock %}
+{% block content %}
+<h2>Tasks</h2>
+
+<article>
+  <form action="/tasks" method="post">
+    <fieldset role="group">
+      <input type="text" name="title" placeholder="New task title…" required />
+      <button type="submit">Add</button>
+    </fieldset>
+  </form>
+</article>
+
+{% if tasks %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Level</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.id }}</td>
+      <td>
+        <a href="/tasks/{{ task.id }}">{{ task.title }}</a>
+        {% if task.atomic %}<small> 🔒 atomic</small>{% endif %}
+        {% if task.parent_id %}<small> ↳ #{{ task.parent_id }}</small>{% endif %}
+      </td>
+      <td>
+        {% if task.status == "done" %}
+          <mark class="status-done">done</mark>
+        {% else %}
+          <mark class="status-open">open</mark>
+        {% endif %}
+      </td>
+      <td>{{ task.level }}</td>
+      <td>
+        {% if task.status == "open" %}
+        <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn">✓ Complete</button>
+        </form>
+        {% endif %}
+        <form action="/tasks/{{ task.id }}/delete" method="post" style="display:inline"
+              onsubmit="return confirm('Delete task {{ task.id }}?')">
+          <button type="submit" class="outline contrast small-btn">✕ Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No tasks yet. Add one above!</p>
+{% endif %}
+{% endblock %}
