@@ -1,20 +1,21 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Tech stack: Python 3.10+, FastAPI, SQLAlchemy (SQLite), Jinja2, Pydantic Settings, APScheduler, Typer, httpx, uvicorn
+  AI integration: GitHub Copilot SDK (CopilotClient), WorkIQ MCP server (optional, via npx)
+  Architecture: FastAPI server (REST API + web UI) with a Typer CLI client that talks to the server over HTTP
+  Storage: SQLite at ~/.task-breaker/tasks.db, managed via SQLAlchemy ORM (TaskORM model)
+  Config: Pydantic BaseSettings with TASK_BREAKER_ env prefix and .env support
+  Timestamps use UTC ISO-8601 via datetime.now(timezone.utc)
+  Default Copilot model: gpt-4.1
+  Task hierarchy: tasks form a tree via parent_id/children_ids, max depth controlled by max_level (default 3)
+  Domain: local AI-powered task management — break high-level tasks into actionable subtasks
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Keep proposals under 500 words
+    - Always include a "Non-goals" section
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - Preserve the Task dataclass/ORM schema when changing data model
+    - Keep the REST API contract (paths and response shapes) stable
