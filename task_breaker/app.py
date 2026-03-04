@@ -70,10 +70,11 @@ def api_add_note(task_id: int, body: Dict[str, Any], db: Session = Depends(get_d
     return _task_to_dict(svc.add_note(task_id, note))
 
 
-@app.delete("/api/tasks/{task_id}", status_code=204)
+@app.delete("/api/tasks/{task_id}", response_model=Dict[str, Any])
 def api_delete_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)
-    svc.delete_task(task_id)
+    task = svc.delete_task(task_id)
+    return _task_to_dict(task)
 
 
 @app.post("/api/tasks/{task_id}/breakdown", response_model=Dict[str, Any])
@@ -87,7 +88,9 @@ async def api_breakdown_task(
     opts = body or {}
     model = opts.get("model", settings.model)
     use_workiq = not opts.get("no_workiq", False)
-    steps = await BreakdownService.breakdown_task(task, model=model, use_workiq=use_workiq)
+    steps = await BreakdownService.breakdown_task(
+        task, model=model, use_workiq=use_workiq
+    )
     task = svc.update_breakdown(task_id, steps)
     svc.create_child_tasks(task, steps, settings.max_level)
     db.refresh(task)
@@ -108,7 +111,11 @@ def api_get_settings():
 @app.put("/api/settings", response_model=Dict[str, Any])
 def api_update_settings(body: Dict[str, Any]):
     # For a personal app, update in-memory settings (changes last until restart)
-    for key in ("auto_breakdown_enabled", "auto_breakdown_threshold_days", "check_interval_hours"):
+    for key in (
+        "auto_breakdown_enabled",
+        "auto_breakdown_threshold_days",
+        "check_interval_hours",
+    ):
         if key in body:
             object.__setattr__(settings, key, body[key])
     return api_get_settings()
@@ -123,7 +130,9 @@ def api_update_settings(body: Dict[str, Any]):
 def web_index(request: Request, db: Session = Depends(get_db)):
     svc = TaskService(db)
     tasks = svc.list_tasks()
-    return templates.TemplateResponse("index.html", {"request": request, "tasks": tasks})
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "tasks": tasks}
+    )
 
 
 @app.post("/tasks", response_class=HTMLResponse)
@@ -215,7 +224,9 @@ async def web_breakdown_task(
 
 @app.get("/settings", response_class=HTMLResponse)
 def web_settings(request: Request):
-    return templates.TemplateResponse("settings.html", {"request": request, "settings": settings})
+    return templates.TemplateResponse(
+        "settings.html", {"request": request, "settings": settings}
+    )
 
 
 @app.post("/settings", response_class=HTMLResponse)
@@ -225,8 +236,12 @@ def web_update_settings(
     auto_breakdown_threshold_days: int = Form(...),
     check_interval_hours: int = Form(...),
 ):
-    object.__setattr__(settings, "auto_breakdown_enabled", auto_breakdown_enabled == "on")
-    object.__setattr__(settings, "auto_breakdown_threshold_days", auto_breakdown_threshold_days)
+    object.__setattr__(
+        settings, "auto_breakdown_enabled", auto_breakdown_enabled == "on"
+    )
+    object.__setattr__(
+        settings, "auto_breakdown_threshold_days", auto_breakdown_threshold_days
+    )
     object.__setattr__(settings, "check_interval_hours", check_interval_hours)
     return RedirectResponse(url="/settings", status_code=303)
 

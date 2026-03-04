@@ -7,7 +7,9 @@ import httpx
 import typer
 import uvicorn
 
-app = typer.Typer(help="Task Breaker CLI — interacts with the local Task Breaker server.")
+app = typer.Typer(
+    help="Task Breaker CLI — interacts with the local Task Breaker server."
+)
 
 _DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
@@ -65,13 +67,17 @@ def list_tasks(
     for t in tasks:
         status_str = "✓" if t["status"] == "done" else "○"
         atomic_str = " 🔒" if t.get("atomic") else ""
-        typer.echo(f"[{t['id']}] {status_str} {t['title']}{atomic_str}  (level {t['level']})")
+        typer.echo(
+            f"[{t['id']}] {status_str} {t['title']}{atomic_str}  (level {t['level']})"
+        )
 
 
 @app.command("add")
 def add_task(
     title: str = typer.Argument(..., help="Task title"),
-    breakdown: bool = typer.Option(False, "--breakdown", help="Trigger AI breakdown immediately"),
+    breakdown: bool = typer.Option(
+        False, "--breakdown", help="Trigger AI breakdown immediately"
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Add a new task."""
@@ -175,7 +181,8 @@ def delete_task(
     with _client(url) as client:
         resp = client.delete(f"/api/tasks/{task_id}")
         resp.raise_for_status()
-    typer.echo(f"Task #{task_id} deleted.")
+    task = resp.json()
+    typer.echo(f"Deleted task #{task['id']}: {task['title']}")
 
 
 if __name__ == "__main__":

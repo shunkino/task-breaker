@@ -48,10 +48,11 @@ class TaskService:
         self.db.refresh(task)
         return task
 
-    def delete_task(self, task_id: int) -> None:
+    def delete_task(self, task_id: int) -> TaskORM:
         task = self.get_task(task_id)
         self.db.delete(task)
         self.db.commit()
+        return task
 
     def find_stale_tasks(self, older_than_days: int) -> List[TaskORM]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
@@ -110,13 +111,17 @@ class BreakdownService:
         debug: bool = False,
     ) -> List[str]:
         if task.atomic:
-            raise ValueError(f"Task {task.id} is atomic and cannot be broken down further.")
+            raise ValueError(
+                f"Task {task.id} is atomic and cannot be broken down further."
+            )
         if (task.level or 0) >= app_settings.max_level:
             raise ValueError(
                 f"Task {task.id} is at level {task.level} (max: {app_settings.max_level}). "
                 "Cannot break down further."
             )
-        _workiq_args = workiq_args if workiq_args is not None else app_settings.workiq_args
+        _workiq_args = (
+            workiq_args if workiq_args is not None else app_settings.workiq_args
+        )
         return await _breakdown_task(
             title=task.title,
             model=model,
