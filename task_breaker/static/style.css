@@ -1,0 +1,13 @@
+/* Task Breaker – minimal custom styles */
+.status-open {
+  background-color: var(--pico-color-orange-500, #f97316);
+  color: #fff;
+}
+.status-done {
+  background-color: var(--pico-color-green-500, #22c55e);
+  color: #fff;
+}
+.small-btn {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
