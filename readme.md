@@ -1,4 +1,84 @@
-## Task Breaker CLI
+## Task Breaker
+
+### Server mode (new)
+
+Task Breaker can now run as a local server with a web portal and REST API.
+
+#### Install
+```bash
+uv sync          # install all dependencies (creates .venv automatically if needed)
+```
+
+#### Start the server
+```bash
+uv run python cli.py serve
+# or with custom host/port
+uv run python cli.py serve --host 127.0.0.1 --port 8000
+```
+
+Alternatively, activate the virtual environment once and use `python` directly:
+```bash
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python cli.py serve
+```
+
+#### Web portal
+Open <http://127.0.0.1:8000> in your browser to manage tasks visually.
+
+#### New CLI client (`cli.py`)
+```bash
+uv run python cli.py add "Plan Q2 roadmap"
+uv run python cli.py add "Build login page" --breakdown   # triggers AI breakdown immediately
+uv run python cli.py list
+uv run python cli.py list --status open
+uv run python cli.py show 1
+uv run python cli.py breakdown 1
+uv run python cli.py complete 1
+uv run python cli.py note 1 "Follow up with design"
+uv run python cli.py delete 1
+```
+
+> The server must be running before using `cli.py` commands (except `serve`).
+
+#### Auto-breakdown scheduler
+The server includes a background scheduler that automatically breaks down stale tasks.
+A task is considered stale when it is:
+- `open` with no breakdown
+- older than the configured threshold (default: 3 days)
+- not marked as atomic
+- has `auto_breakdown_enabled = true`
+
+Configure the scheduler via the **Settings** page at <http://127.0.0.1:8000/settings>
+or with environment variables (prefix `TASK_BREAKER_`).
+
+#### REST API
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tasks` | List tasks (`?status=open\|done`) |
+| POST | `/api/tasks` | Create task `{"title": "..."}` |
+| GET | `/api/tasks/{id}` | Get task |
+| POST | `/api/tasks/{id}/complete` | Mark done |
+| POST | `/api/tasks/{id}/note` | Add note `{"note": "..."}` |
+| DELETE | `/api/tasks/{id}` | Delete task |
+| POST | `/api/tasks/{id}/breakdown` | Trigger AI breakdown |
+| GET | `/api/settings` | Get settings |
+| PUT | `/api/settings` | Update settings |
+
+#### Configuration
+Set environment variables (prefix `TASK_BREAKER_`) or create a `.env` file:
+```
+TASK_BREAKER_MODEL=gpt-4.1
+TASK_BREAKER_AUTO_BREAKDOWN_ENABLED=true
+TASK_BREAKER_AUTO_BREAKDOWN_THRESHOLD_DAYS=3
+TASK_BREAKER_CHECK_INTERVAL_HOURS=1
+TASK_BREAKER_MAX_LEVEL=3
+```
+
+Data is stored as SQLite at `~/.task-breaker/tasks.db`.
+
+---
+
+## Task Breaker CLI (original standalone)
 
 ### Background
 
