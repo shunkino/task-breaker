@@ -4,11 +4,22 @@
 
 Task Breaker can now run as a local server with a web portal and REST API.
 
+#### Install
+```bash
+uv sync          # install all dependencies (creates .venv automatically if needed)
+```
+
 #### Start the server
 ```bash
-python cli.py serve
+uv run python cli.py serve
 # or with custom host/port
-python cli.py serve --host 127.0.0.1 --port 8000
+uv run python cli.py serve --host 127.0.0.1 --port 8000
+```
+
+Alternatively, activate the virtual environment once and use `python` directly:
+```bash
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python cli.py serve
 ```
 
 #### Web portal
@@ -16,15 +27,15 @@ Open <http://127.0.0.1:8000> in your browser to manage tasks visually.
 
 #### New CLI client (`cli.py`)
 ```bash
-python cli.py add "Plan Q2 roadmap"
-python cli.py add "Build login page" --breakdown   # triggers AI breakdown immediately
-python cli.py list
-python cli.py list --status open
-python cli.py show 1
-python cli.py breakdown 1
-python cli.py complete 1
-python cli.py note 1 "Follow up with design"
-python cli.py delete 1
+uv run python cli.py add "Plan Q2 roadmap"
+uv run python cli.py add "Build login page" --breakdown   # triggers AI breakdown immediately
+uv run python cli.py list
+uv run python cli.py list --status open
+uv run python cli.py show 1
+uv run python cli.py breakdown 1
+uv run python cli.py complete 1
+uv run python cli.py note 1 "Follow up with design"
+uv run python cli.py delete 1
 ```
 
 > The server must be running before using `cli.py` commands (except `serve`).
