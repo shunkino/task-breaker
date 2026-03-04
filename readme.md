@@ -1,8 +1,19 @@
 ## Task Breaker
 
-### Server mode (new)
+Task Breaker is a local task management app that uses AI (GitHub Copilot SDK + WorkIQ MCP) to automatically break down high-level tasks into smaller, actionable steps.
 
-Task Breaker can now run as a local server with a web portal and REST API.
+It can run in two modes:
+
+1. **Server mode** — A FastAPI web server with a browser-based UI, REST API, and a Typer CLI client (`cli.py`) that communicates over HTTP. Tasks are stored in SQLite. Includes a background scheduler for auto-breakdown of stale tasks.
+2. **Standalone CLI mode** — The original single-file CLI (`task_breaker.py`) that talks directly to the Copilot SDK with no server required. Tasks are stored in a JSON file.
+
+Both modes use GitHub Copilot for AI-powered task breakdown and optionally integrate with WorkIQ MCP for contextual grounding.
+
+---
+
+### Server mode
+
+Task Breaker runs as a local server with a web portal and REST API.
 
 #### Install
 ```bash
@@ -90,7 +101,6 @@ My assumption is that the reason tasks pile up is that they aren't broken down i
 
 **Goal:** Automatically break down tasks into smaller ones if they remain unresolved for a predefined number of days. For example, if the user sets the timer to 3 days and a registered task is not finished within that period, this tool will automatically kick in and split the task into smaller, more actionable chunks. This way, the user can more easily start working on the task, increasing the probability that it moves forward. The task status also becomes more granular, giving better visibility into progress.
 
-> **Note:** This project is still in a very experimental stage — the automatic breakdown feature is not yet implemented.
 
 ### Prereqs
 - Python 3.10+
