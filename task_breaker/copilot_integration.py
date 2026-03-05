@@ -302,7 +302,8 @@ async def breakdown_task(
 
             # If interactive, prompt the user for a decision.
             if sys.stdin is not None and sys.stdin.isatty():
-                tool_name = request.get("tool", {}).get("name") if isinstance(request.get("tool"), dict) else request.get("tool")
+                tool_raw = request.get("tool")
+                tool_name = tool_raw.get("name") if isinstance(tool_raw, dict) else tool_raw
                 server_name = request.get("server_name") or request.get("server")
                 summary_parts = [f"kind={kind!r}"]
                 if server_name:
