@@ -42,6 +42,13 @@
         min="1" />
     </label>
 
+    <label for="max-tasks">
+      Max tasks per level
+      <input type="text" id="max-tasks" name="max_tasks_per_level"
+        value="{{ settings.max_tasks_per_level }}" placeholder="5-L" />
+      <small>Formula like '5-L' (where L is level), a fixed number like '10', or 'auto' for LLM-decided</small>
+    </label>
+
     <button type="submit">Save</button>
   </form>
 </article>
@@ -57,6 +64,10 @@
       <tr>
         <td>Max breakdown level</td>
         <td>{{ settings.max_level }}</td>
+      </tr>
+      <tr>
+        <td>Max tasks per level</td>
+        <td><code>{{ settings.max_tasks_per_level }}</code></td>
       </tr>
       <tr>
         <td>WorkIQ command</td>

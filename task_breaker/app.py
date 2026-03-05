@@ -442,6 +442,7 @@ def web_update_settings(
     auto_breakdown_enabled: Optional[str] = Form(None),
     auto_breakdown_threshold_days: int = Form(...),
     check_interval_hours: int = Form(...),
+    max_tasks_per_level: str = Form(...),
 ):
     object.__setattr__(
         settings, "auto_breakdown_enabled", auto_breakdown_enabled == "on"
@@ -450,6 +451,7 @@ def web_update_settings(
         settings, "auto_breakdown_threshold_days", auto_breakdown_threshold_days
     )
     object.__setattr__(settings, "check_interval_hours", check_interval_hours)
+    object.__setattr__(settings, "max_tasks_per_level", max_tasks_per_level.strip())
     return RedirectResponse(url="/settings", status_code=303)
 
 
