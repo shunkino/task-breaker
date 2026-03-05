@@ -19,7 +19,54 @@ DEFAULT_STORAGE = os.path.expanduser("~/.task-breaker/tasks.json")
 DEFAULT_USAGE_LOG = os.path.expanduser("~/.task-breaker/usage.log")
 DEFAULT_EULA_PATH = os.path.expanduser("~/.task-breaker/workiq_eula.json")
 DEFAULT_MAX_LEVEL = 3
+DEFAULT_MAX_TASKS_PER_LEVEL = "5-L"
 WORKIQ_EULA_URL = "https://github.com/microsoft/work-iq-mcp"
+
+
+def evaluate_max_tasks_formula(formula: str, level: int) -> Optional[int]:
+    """
+    Evaluate a formula for max tasks at a given level.
+
+    Args:
+        formula: Formula string, e.g., "5-L", "10", "auto", "3*L+2"
+        level: Current task level
+
+    Returns:
+        Maximum number of tasks (None for "auto" mode, meaning let LLM decide)
+    """
+    if not formula or not isinstance(formula, str):
+        return None
+
+    formula = formula.strip()
+
+    # Handle "auto" mode - let LLM decide
+    if formula.lower() == "auto":
+        return None
+
+    # Try to parse as a simple integer
+    try:
+        return max(1, int(formula))
+    except ValueError:
+        pass
+
+    # Formula contains 'L' - evaluate as expression
+    # Replace L with the actual level value
+    # Only allow safe mathematical operations
+    safe_formula = formula.replace("L", str(level))
+
+    # Validate that only safe characters are present
+    if not re.match(r'^[0-9+\-*/() ]+$', safe_formula):
+        # Invalid characters in formula, return None (auto mode)
+        return None
+
+    try:
+        # Evaluate the mathematical expression
+        result = eval(safe_formula, {"__builtins__": {}}, {})
+        # Ensure at least 1 task
+        return max(1, int(result))
+    except (SyntaxError, ValueError, ZeroDivisionError, NameError):
+        # If evaluation fails, return None (auto mode)
+        return None
 
 
 def is_workiq_eula_accepted(eula_path: str = DEFAULT_EULA_PATH) -> bool:
@@ -458,6 +505,7 @@ async def breakdown_task(
     usage_logger: Optional[UsageLogger] = None,
     source_command: Optional[str] = None,
     debug: bool = False,
+    max_tasks: Optional[int] = None,
 ) -> List[str]:
     client_opts: Dict[str, Any] = {}
     if debug:
@@ -494,7 +542,13 @@ async def breakdown_task(
                 " (b) If it is unclear how to achieve the goal, investigate context using WorkIQ."
                 " (c) If the task is to implement something or a small dashboard would help,"
                 " propose a small implementation project as steps."
-                " Return the breakdown as a JSON array of short step strings."
+                + (
+                    f" (d) Create AT MOST {max_tasks} tasks in your breakdown."
+                    f" Prioritize the most important {max_tasks} steps."
+                    if max_tasks is not None and max_tasks > 0
+                    else ""
+                )
+                + " Return the breakdown as a JSON array of short step strings."
                 " If you used WorkIQ, mention that in a final step like 'Review WorkIQ findings'."
             )
         },
@@ -597,7 +651,15 @@ async def breakdown_task(
         steps = [content.strip()]
     if not isinstance(steps, list):
         steps = [str(steps)]
-    return [str(step).strip() for step in steps if str(step).strip()]
+
+    # Filter and clean steps
+    steps = [str(step).strip() for step in steps if str(step).strip()]
+
+    # Apply max_tasks limit if specified (safety truncation)
+    if max_tasks is not None and max_tasks > 0 and len(steps) > max_tasks:
+        steps = steps[:max_tasks]
+
+    return steps
 
 
 def _make_permission_handler(project_dir: str):
@@ -926,6 +988,8 @@ def cmd_add(args: argparse.Namespace) -> None:
     )
     breakdown: List[str] = []
     if args.breakdown:
+        # Evaluate max_tasks formula for level 0 (new root task)
+        max_tasks = evaluate_max_tasks_formula(args.max_tasks_per_level, 0)
         breakdown = asyncio.run(
             breakdown_task(
                 title=args.title,
@@ -936,6 +1000,7 @@ def cmd_add(args: argparse.Namespace) -> None:
                 usage_logger=args.usage_logger,
                 source_command="add",
                 debug=args.debug,
+                max_tasks=max_tasks,
             )
         )
     task = Task(
@@ -1119,6 +1184,8 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
             "workiq_enabled": use_workiq,
         },
     )
+    # Evaluate max_tasks formula for this task's level
+    max_tasks = evaluate_max_tasks_formula(args.max_tasks_per_level, task.level)
     steps = asyncio.run(
         breakdown_task(
             title=task.title,
@@ -1129,6 +1196,7 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
             usage_logger=args.usage_logger,
             source_command="breakdown",
             debug=args.debug,
+            max_tasks=max_tasks,
         )
     )
     task.breakdown = steps
@@ -1240,6 +1308,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_LEVEL,
         help=f"Maximum breakdown depth (default: {DEFAULT_MAX_LEVEL})",
     )
+    add_parser.add_argument(
+        "--max-tasks-per-level",
+        type=str,
+        default=DEFAULT_MAX_TASKS_PER_LEVEL,
+        help=f"Max tasks per level (formula like '5-L' where L is level, or 'auto' for LLM-decided, default: {DEFAULT_MAX_TASKS_PER_LEVEL})",
+    )
     add_parser.set_defaults(func=cmd_add)
 
     list_parser = subparsers.add_parser("list", help="List tasks")
@@ -1325,6 +1399,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_MAX_LEVEL,
         help=f"Maximum breakdown depth (default: {DEFAULT_MAX_LEVEL})",
+    )
+    breakdown_parser.add_argument(
+        "--max-tasks-per-level",
+        type=str,
+        default=DEFAULT_MAX_TASKS_PER_LEVEL,
+        help=f"Max tasks per level (formula like '5-L' where L is level, or 'auto' for LLM-decided, default: {DEFAULT_MAX_TASKS_PER_LEVEL})",
     )
     breakdown_parser.set_defaults(func=cmd_breakdown)
 
