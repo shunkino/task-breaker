@@ -171,6 +171,7 @@ async def api_breakdown_task(
     opts = body or {}
     model = opts.get("model", settings.model)
     use_workiq = not opts.get("no_workiq", False)
+    max_tasks_per_level = opts.get("max_tasks_per_level")
     if use_workiq and not is_workiq_eula_accepted(settings.workiq_eula_path):
         raise HTTPException(
             status_code=428,
@@ -180,7 +181,11 @@ async def api_breakdown_task(
             ),
         )
     steps = await BreakdownService.breakdown_task(
-        task, model=model, use_workiq=use_workiq, debug=settings.debug
+        task,
+        model=model,
+        use_workiq=use_workiq,
+        debug=settings.debug,
+        max_tasks_per_level=max_tasks_per_level,
     )
     task = svc.update_breakdown(task_id, steps)
     svc.create_child_tasks(task, steps, settings.max_level)
@@ -196,6 +201,7 @@ def api_get_settings():
         "check_interval_hours": settings.check_interval_hours,
         "model": settings.model,
         "max_level": settings.max_level,
+        "max_tasks_per_level": settings.max_tasks_per_level,
         "workiq_eula_accepted": is_workiq_eula_accepted(settings.workiq_eula_path),
         "workiq_eula_url": WORKIQ_EULA_URL,
     }
