@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     max_level: int = 3
+    debug: bool = False
 
     @property
     def db_url(self) -> str:

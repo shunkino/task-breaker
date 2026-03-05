@@ -174,7 +174,7 @@ async def api_breakdown_task(
             ),
         )
     steps = await BreakdownService.breakdown_task(
-        task, model=model, use_workiq=use_workiq
+        task, model=model, use_workiq=use_workiq, debug=settings.debug
     )
     task = svc.update_breakdown(task_id, steps)
     svc.create_child_tasks(task, steps, settings.max_level)
@@ -386,7 +386,7 @@ async def web_breakdown_task(
             _svc = TaskService(_db)
             _task = _svc.get_task(task_id)
             use_workiq = is_workiq_eula_accepted(settings.workiq_eula_path)
-            steps = await BreakdownService.breakdown_task(_task, use_workiq=use_workiq)
+            steps = await BreakdownService.breakdown_task(_task, use_workiq=use_workiq, debug=settings.debug)
             _task = _svc.update_breakdown(task_id, steps)
             _svc.create_child_tasks(_task, steps, settings.max_level)
         finally:

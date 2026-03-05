@@ -267,9 +267,28 @@ async def breakdown_task(
             }
         }
 
+        def _workiq_permission_handler(request: dict, context: dict) -> dict:
+            """Auto-approve WorkIQ MCP tool calls; user opted in by enabling WorkIQ."""
+            kind = request.get("kind", "unknown")
+            if debug:
+                print(
+                    f"[DEBUG] permission_request: kind={kind!r} request={request}",
+                    file=sys.stderr,
+                )
+            decision = {"kind": "approved"}
+            if debug:
+                print(
+                    f"[DEBUG] permission_request: auto-approved (kind={kind!r})",
+                    file=sys.stderr,
+                )
+            return decision
+
+        session_config["on_permission_request"] = _workiq_permission_handler
+
     if debug:
+        _loggable = {k: v for k, v in session_config.items() if not callable(v)}
         print(
-            f"[DEBUG] session_config = {json.dumps(session_config, indent=2)}",
+            f"[DEBUG] session_config = {json.dumps(_loggable, indent=2)}",
             file=sys.stderr,
         )
 

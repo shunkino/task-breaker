@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Typer-based CLI client for Task Breaker server."""
+import os
 import sys
 from typing import Optional
 
@@ -42,15 +43,20 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host"),
     port: int = typer.Option(8000, help="Bind port"),
     reload: bool = typer.Option(False, help="Enable auto-reload (development)"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug output for Copilot/WorkIQ integration"),
 ):
     """Start the Task Breaker server."""
+    if debug:
+        os.environ["TASK_BREAKER_DEBUG"] = "true"
     uvicorn.run("task_breaker.app:app", host=host, port=port, reload=reload)
 
 
 @app.command("list")
 def list_tasks(
     status: Optional[str] = typer.Option(None, help="Filter by status: open|done"),
-    sort: Optional[str] = typer.Option(None, help="Sort field: id|due_date|level|status|created_at|updated_at|title"),
+    sort: Optional[str] = typer.Option(
+        None, help="Sort field: id|due_date|level|status|created_at|updated_at|title"
+    ),
     order: str = typer.Option("desc", help="Sort direction: asc|desc"),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
@@ -95,7 +101,9 @@ def _print_tree_node(node: dict, prefix: str = "", is_last: bool = True) -> None
 
 @app.command("tree")
 def tree_tasks(
-    task_id: Optional[int] = typer.Argument(None, help="Optional task ID to show subtree"),
+    task_id: Optional[int] = typer.Argument(
+        None, help="Optional task ID to show subtree"
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Show tasks as a hierarchical tree."""
@@ -121,7 +129,9 @@ def add_task(
     breakdown: bool = typer.Option(
         False, "--breakdown", help="Trigger AI breakdown immediately"
     ),
-    due: Optional[str] = typer.Option(None, "--due", help="Due date in YYYY-MM-DD format"),
+    due: Optional[str] = typer.Option(
+        None, "--due", help="Due date in YYYY-MM-DD format"
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Add a new task."""
@@ -241,7 +251,9 @@ def delete_task(
 @app.command("due")
 def set_due_date(
     task_id: int = typer.Argument(..., help="Task ID"),
-    date: str = typer.Argument(..., help="Due date in YYYY-MM-DD format (empty string to clear)"),
+    date: str = typer.Argument(
+        ..., help="Due date in YYYY-MM-DD format (empty string to clear)"
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Set or update the due date of a task."""
@@ -289,7 +301,9 @@ def focus_list(
     for t in tasks:
         status_str = "✓" if t["status"] == "done" else "○"
         due_str = f"  due: {t['due_date']}" if t.get("due_date") else ""
-        typer.echo(f"[{t['id']}] {status_str} {t['title']}  (level {t['level']}){due_str}")
+        typer.echo(
+            f"[{t['id']}] {status_str} {t['title']}  (level {t['level']}){due_str}"
+        )
 
 
 if __name__ == "__main__":
