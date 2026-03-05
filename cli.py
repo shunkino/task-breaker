@@ -72,6 +72,42 @@ def list_tasks(
         )
 
 
+def _print_tree_node(node: dict, prefix: str = "", is_last: bool = True) -> None:
+    """Recursively print a tree node with box-drawing characters."""
+    connector = "└── " if is_last else "├── "
+    status_icon = "✓" if node["status"] == "done" else "○"
+    atomic_str = " 🔒" if node.get("atomic") else ""
+    typer.echo(
+        f"{prefix}{connector}[{node['id']}] {status_icon} {node['title']}{atomic_str}"
+    )
+    children = node.get("children", [])
+    child_prefix = prefix + ("    " if is_last else "│   ")
+    for i, child in enumerate(children):
+        _print_tree_node(child, child_prefix, i == len(children) - 1)
+
+
+@app.command("tree")
+def tree_tasks(
+    task_id: Optional[int] = typer.Argument(None, help="Optional task ID to show subtree"),
+    url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
+):
+    """Show tasks as a hierarchical tree."""
+    _require_server(url)
+    with _client(url) as client:
+        if task_id is not None:
+            resp = client.get(f"/api/tasks/{task_id}/tree")
+        else:
+            resp = client.get("/api/tasks/tree")
+        resp.raise_for_status()
+    tree = resp.json()
+    if not tree:
+        typer.echo("No tasks.")
+        return
+    typer.echo("Task Hierarchy")
+    for i, root in enumerate(tree):
+        _print_tree_node(root, "", i == len(tree) - 1)
+
+
 @app.command("add")
 def add_task(
     title: str = typer.Argument(..., help="Task title"),

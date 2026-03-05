@@ -19,6 +19,47 @@ class TaskService:
             query = query.filter(TaskORM.status == status)
         return query.order_by(TaskORM.created_at.desc()).all()
 
+    def get_task_tree(self) -> List[dict]:
+        """Return all tasks organized as a hierarchical tree structure."""
+        tasks = self.db.query(TaskORM).order_by(TaskORM.created_at).all()
+        task_map = {t.id: t for t in tasks}
+        children_map: dict[Optional[int], list] = {}
+        for t in tasks:
+            children_map.setdefault(t.parent_id, []).append(t)
+        roots = children_map.get(None, [])
+        return [self._build_tree_node(r, children_map) for r in roots]
+
+    def get_subtree(self, task_id: int) -> list:
+        """Return a single task and all its descendants as a tree."""
+        task = self.get_task(task_id)
+        tasks = self.db.query(TaskORM).order_by(TaskORM.created_at).all()
+        children_map: dict[Optional[int], list] = {}
+        for t in tasks:
+            children_map.setdefault(t.parent_id, []).append(t)
+        return [self._build_tree_node(task, children_map)]
+
+    @staticmethod
+    def _build_tree_node(task: TaskORM, children_map: dict) -> dict:
+        """Recursively build a tree node dict for a task."""
+        children = children_map.get(task.id, [])
+        return {
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "level": task.level,
+            "atomic": task.atomic,
+            "parent_id": task.parent_id,
+            "children_ids": task.children_ids or [],
+            "breakdown": task.breakdown or [],
+            "notes": task.notes,
+            "source": task.source,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "children": [
+                TaskService._build_tree_node(c, children_map) for c in children
+            ],
+        }
+
     def get_task(self, task_id: int) -> TaskORM:
         task = self.db.query(TaskORM).filter(TaskORM.id == task_id).first()
         if not task:

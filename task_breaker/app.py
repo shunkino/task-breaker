@@ -41,6 +41,20 @@ def api_list_tasks(status: Optional[str] = None, db: Session = Depends(get_db)):
     return [_task_to_dict(t) for t in tasks]
 
 
+@app.get("/api/tasks/tree")
+def api_task_tree(db: Session = Depends(get_db)):
+    """Return all tasks as a hierarchical tree structure."""
+    svc = TaskService(db)
+    return svc.get_task_tree()
+
+
+@app.get("/api/tasks/{task_id}/tree")
+def api_task_subtree(task_id: int, db: Session = Depends(get_db)):
+    """Return a task and all its descendants as a hierarchical tree."""
+    svc = TaskService(db)
+    return svc.get_subtree(task_id)
+
+
 @app.post("/api/tasks", response_model=Dict[str, Any], status_code=201)
 def api_create_task(body: Dict[str, Any], db: Session = Depends(get_db)):
     title = body.get("title", "").strip()
@@ -132,6 +146,15 @@ def web_index(request: Request, db: Session = Depends(get_db)):
     tasks = svc.list_tasks()
     return templates.TemplateResponse(
         "index.html", {"request": request, "tasks": tasks}
+    )
+
+
+@app.get("/tree", response_class=HTMLResponse)
+def web_tree(request: Request, db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    tree = svc.get_task_tree()
+    return templates.TemplateResponse(
+        "tree.html", {"request": request, "tree": tree}
     )
 
 

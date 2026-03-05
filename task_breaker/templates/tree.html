@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Task Hierarchy{% endblock %}
+{% block content %}
+<h2>Task Hierarchy</h2>
+
+{% macro render_node(node) %}
+<li>
+  <details open>
+    <summary>
+      <a href="/tasks/{{ node.id }}">#{{ node.id }}</a>
+      {% if node.status == "done" %}
+        <mark class="status-done">✓</mark>
+      {% else %}
+        <mark class="status-open">○</mark>
+      {% endif %}
+      {{ node.title }}
+      {% if node.atomic %}<small> 🔒 atomic</small>{% endif %}
+      <small>(level {{ node.level }})</small>
+    </summary>
+    {% if node.children %}
+    <ul>
+      {% for child in node.children %}
+        {{ render_node(child) }}
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </details>
+</li>
+{% endmacro %}
+
+{% if tree %}
+<ul class="tree-view">
+  {% for root in tree %}
+    {{ render_node(root) }}
+  {% endfor %}
+</ul>
+{% else %}
+<p>No tasks yet. <a href="/">Add one</a> to get started!</p>
+{% endif %}
+{% endblock %}

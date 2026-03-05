@@ -143,6 +143,69 @@ def render_tasks(tasks: List[Task]) -> str:
     return "\n\n".join(render_task(task) for task in tasks)
 
 
+def _build_tree_index(tasks: List[Task]) -> Dict[Optional[int], List[Task]]:
+    """Build a mapping from parent_id to list of child tasks."""
+    index: Dict[Optional[int], List[Task]] = {}
+    for task in tasks:
+        index.setdefault(task.parent_id, []).append(task)
+    return index
+
+
+def _render_tree_node(
+    task: Task,
+    index: Dict[Optional[int], List[Task]],
+    prefix: str = "",
+    is_last: bool = True,
+) -> List[str]:
+    """Recursively render a single tree node and its children."""
+    connector = "└── " if is_last else "├── "
+    status_icon = "✓" if task.status == "done" else "○"
+    atomic_str = " 🔒" if task.atomic else ""
+    line = f"{prefix}{connector}[{task.id}] {status_icon} {task.title}{atomic_str}"
+    lines = [line]
+
+    children = index.get(task.id, [])
+    child_prefix = prefix + ("    " if is_last else "│   ")
+    for i, child in enumerate(children):
+        lines.extend(
+            _render_tree_node(child, index, child_prefix, i == len(children) - 1)
+        )
+    return lines
+
+
+def render_tree(tasks: List[Task]) -> str:
+    """Render all tasks as a hierarchical tree string."""
+    if not tasks:
+        return "No tasks yet."
+    index = _build_tree_index(tasks)
+    task_ids = {t.id for t in tasks}
+    # Roots are tasks whose parent_id is None or whose parent is not in the set
+    roots = [t for t in tasks if t.parent_id is None or t.parent_id not in task_ids]
+    if not roots:
+        return "No root tasks found."
+    lines: List[str] = ["Task Hierarchy"]
+    for i, root in enumerate(roots):
+        lines.extend(_render_tree_node(root, index, "", i == len(roots) - 1))
+    return "\n".join(lines)
+
+
+def get_subtree(tasks: List[Task], task_id: int) -> List[Task]:
+    """Return a task and all its descendants."""
+    index = _build_tree_index(tasks)
+    result: List[Task] = []
+
+    def _collect(tid: int) -> None:
+        for task in tasks:
+            if task.id == tid:
+                result.append(task)
+                break
+        for child in index.get(tid, []):
+            _collect(child.id)
+
+    _collect(task_id)
+    return result
+
+
 def resolve_copilot_cli_path(debug: bool = False) -> Optional[str]:
     """On Windows, resolve the full path to the copilot CLI.
 
@@ -729,6 +792,18 @@ def cmd_list(args: argparse.Namespace) -> None:
     print(render_tasks(tasks))
 
 
+def cmd_tree(args: argparse.Namespace) -> None:
+    tasks = load_tasks(args.storage)
+    args.usage_logger.emit(
+        "command", {"name": "tree", "task_id": getattr(args, "id", None)}
+    )
+    if hasattr(args, "id") and args.id is not None:
+        subtree = get_subtree(tasks, args.id)
+        print(render_tree(subtree))
+    else:
+        print(render_tree(tasks))
+
+
 def cmd_show(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task = find_task(tasks, args.id)
@@ -907,6 +982,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--status", choices=["open", "done"], help="Filter by status"
     )
     list_parser.set_defaults(func=cmd_list)
+
+    tree_parser = subparsers.add_parser("tree", help="Show task hierarchy as a tree")
+    tree_parser.add_argument(
+        "id", type=int, nargs="?", default=None, help="Optional task id to show subtree"
+    )
+    tree_parser.set_defaults(func=cmd_tree)
 
     show_parser = subparsers.add_parser("show", help="Show task detail")
     show_parser.add_argument("id", type=int, help="Task id")
