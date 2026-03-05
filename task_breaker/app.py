@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import date as _date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,9 +36,14 @@ templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 
 @app.get("/api/tasks", response_model=List[Dict[str, Any]])
-def api_list_tasks(status: Optional[str] = None, db: Session = Depends(get_db)):
+def api_list_tasks(
+    status: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = "desc",
+    db: Session = Depends(get_db),
+):
     svc = TaskService(db)
-    tasks = svc.list_tasks(status=status)
+    tasks = svc.list_tasks(status=status, sort_by=sort, sort_order=order)
     return [_task_to_dict(t) for t in tasks]
 
 
@@ -60,9 +66,23 @@ def api_create_task(body: Dict[str, Any], db: Session = Depends(get_db)):
     title = body.get("title", "").strip()
     if not title:
         raise HTTPException(status_code=422, detail="title is required")
+    due_date = None
+    if body.get("due_date"):
+        try:
+            due_date = datetime.combine(
+                _date.fromisoformat(body["due_date"]), datetime.min.time(), tzinfo=timezone.utc
+            )
+        except ValueError:
+            raise HTTPException(status_code=422, detail="due_date must be YYYY-MM-DD")
     svc = TaskService(db)
-    task = svc.create_task(title)
+    task = svc.create_task(title, due_date=due_date)
     return _task_to_dict(task)
+
+
+@app.get("/api/tasks/focus", response_model=List[Dict[str, Any]])
+def api_list_focus_tasks(db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    return [_task_to_dict(t) for t in svc.list_focus_tasks()]
 
 
 @app.get("/api/tasks/{task_id}", response_model=Dict[str, Any])
@@ -89,6 +109,27 @@ def api_delete_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)
     task = svc.delete_task(task_id)
     return _task_to_dict(task)
+
+
+@app.post("/api/tasks/{task_id}/focus", response_model=Dict[str, Any])
+def api_toggle_focus(task_id: int, db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    return _task_to_dict(svc.toggle_focus(task_id))
+
+
+@app.put("/api/tasks/{task_id}/due", response_model=Dict[str, Any])
+def api_set_due_date(task_id: int, body: Dict[str, Any], db: Session = Depends(get_db)):
+    due_str = body.get("due_date")
+    due_date = None
+    if due_str:
+        try:
+            due_date = datetime.combine(
+                _date.fromisoformat(due_str), datetime.min.time(), tzinfo=timezone.utc
+            )
+        except ValueError:
+            raise HTTPException(status_code=422, detail="due_date must be YYYY-MM-DD")
+    svc = TaskService(db)
+    return _task_to_dict(svc.set_due_date(task_id, due_date))
 
 
 @app.post("/api/tasks/{task_id}/breakdown", response_model=Dict[str, Any])
@@ -141,12 +182,58 @@ def api_update_settings(body: Dict[str, Any]):
 
 
 @app.get("/", response_class=HTMLResponse)
-def web_index(request: Request, db: Session = Depends(get_db)):
+def web_index(
+    request: Request,
+    sort: Optional[str] = None,
+    order: str = "desc",
+    db: Session = Depends(get_db),
+):
     svc = TaskService(db)
-    tasks = svc.list_tasks()
+    tasks = svc.list_tasks(sort_by=sort, sort_order=order)
     return templates.TemplateResponse(
-        "index.html", {"request": request, "tasks": tasks}
+        "index.html", {
+            "request": request,
+            "tasks": tasks,
+            "sort": sort or "created_at",
+            "order": order,
+            "today": _date.today(),
+        }
     )
+
+
+@app.get("/focus", response_class=HTMLResponse)
+def web_focus(request: Request, db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    tasks = svc.list_focus_tasks()
+    return templates.TemplateResponse(
+        "focus.html", {"request": request, "tasks": tasks}
+    )
+
+
+@app.post("/tasks/{task_id}/focus", response_class=HTMLResponse)
+def web_toggle_focus(task_id: int, db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    svc.toggle_focus(task_id)
+    return RedirectResponse(url=f"/tasks/{task_id}", status_code=303)
+
+
+@app.post("/tasks/{task_id}/due", response_class=HTMLResponse)
+def web_set_due_date(
+    task_id: int,
+    due_date: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    svc = TaskService(db)
+    parsed_due = None
+    if due_date:
+        try:
+            parsed_due = datetime.combine(
+                _date.fromisoformat(due_date), datetime.min.time(), tzinfo=timezone.utc
+            )
+        except ValueError:
+            pass
+    svc.set_due_date(task_id, parsed_due)
+    return RedirectResponse(url=f"/tasks/{task_id}", status_code=303)
 
 
 @app.get("/tree", response_class=HTMLResponse)
@@ -162,10 +249,19 @@ def web_tree(request: Request, db: Session = Depends(get_db)):
 def web_add_task(
     request: Request,
     title: str = Form(...),
+    due_date: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     svc = TaskService(db)
-    svc.create_task(title.strip())
+    parsed_due = None
+    if due_date:
+        try:
+            parsed_due = datetime.combine(
+                _date.fromisoformat(due_date), datetime.min.time(), tzinfo=timezone.utc
+            )
+        except ValueError:
+            pass
+    svc.create_task(title.strip(), due_date=parsed_due)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -289,4 +385,6 @@ def _task_to_dict(task) -> Dict[str, Any]:
         "parent_id": task.parent_id,
         "children_ids": task.children_ids or [],
         "auto_breakdown_enabled": task.auto_breakdown_enabled,
+        "due_date": task.due_date.date().isoformat() if task.due_date else None,
+        "daily_focus": task.daily_focus,
     }

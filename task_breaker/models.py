@@ -27,3 +27,5 @@ class TaskORM(Base):
     parent_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id"), nullable=True)
     children_ids: Mapped[Optional[List[int]]] = mapped_column(JSON, nullable=True)
     auto_breakdown_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    daily_focus: Mapped[bool] = mapped_column(Boolean, default=False)

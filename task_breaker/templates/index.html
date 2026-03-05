@@ -7,10 +7,33 @@
   <form action="/tasks" method="post">
     <fieldset role="group">
       <input type="text" name="title" placeholder="New task title…" required />
+      <input type="date" name="due_date" title="Due date (optional)" />
       <button type="submit">Add</button>
     </fieldset>
   </form>
 </article>
+
+<details>
+  <summary>Sort options</summary>
+  <form method="get" action="/" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:0.5rem">
+    <label>
+      Sort by
+      <select name="sort">
+        {% for field in [("created_at","Created"), ("id","ID"), ("title","Title"), ("status","Status"), ("level","Level"), ("due_date","Due Date"), ("updated_at","Updated")] %}
+        <option value="{{ field[0] }}" {% if sort == field[0] %}selected{% endif %}>{{ field[1] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Order
+      <select name="order">
+        <option value="desc" {% if order == "desc" %}selected{% endif %}>Descending</option>
+        <option value="asc" {% if order == "asc" %}selected{% endif %}>Ascending</option>
+      </select>
+    </label>
+    <button type="submit" class="outline">Apply</button>
+  </form>
+</details>
 
 {% if tasks %}
 <table>
@@ -20,10 +43,12 @@
       <th>Title</th>
       <th>Status</th>
       <th>Level</th>
+      <th>Due Date</th>
       <th>Actions</th>
     </tr>
   </thead>
   <tbody>
+    {% set today = today %}
     {% for task in tasks %}
     <tr>
       <td>{{ task.id }}</td>
@@ -41,6 +66,25 @@
       </td>
       <td>{{ task.level }}</td>
       <td>
+        {% if task.due_date %}
+          {% set due = task.due_date.date() %}
+          {% if task.status != "done" and due < today %}
+            <span style="color:var(--pico-color-red-500)">⚠️ {{ due.isoformat() }}</span>
+          {% elif task.status != "done" and (due - today).days <= 3 %}
+            <span style="color:var(--pico-color-amber-500)">⏰ {{ due.isoformat() }}</span>
+          {% else %}
+            {{ due.isoformat() }}
+          {% endif %}
+        {% else %}
+          <span style="color:#aaa">—</span>
+        {% endif %}
+      </td>
+      <td>
+        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn" title="Toggle daily focus">
+            {% if task.daily_focus %}⭐{% else %}☆{% endif %}
+          </button>
+        </form>
         {% if task.status == "open" %}
         <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">✓ Complete</button>

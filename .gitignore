@@ -21,3 +21,6 @@ dist/
 
 # Generated task project directories from --implement
 [0-9]*-*/
+
+# Server log
+nohup.out

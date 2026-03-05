@@ -34,6 +34,8 @@ class Task:
     level: int = 0
     parent_id: Optional[int] = None
     children_ids: Optional[List[int]] = None
+    due_date: Optional[str] = None
+    daily_focus: bool = False
 
 
 def now_iso() -> str:
@@ -116,10 +118,14 @@ def create_child_tasks(
 
 def render_task(task: Task) -> str:
     lines = [f"[{task.id}] {task.title}", f"  status: {task.status}"]
+    if task.daily_focus:
+        lines.append("  daily focus: ⭐")
     if task.atomic:
         lines.append("  atomic: yes")
     if task.level > 0:
         lines.append(f"  level: {task.level}")
+    if task.due_date:
+        lines.append(f"  due: {task.due_date}")
     if task.parent_id is not None:
         lines.append(f"  parent: #{task.parent_id}")
     if task.children_ids:
@@ -748,6 +754,7 @@ def cmd_add(args: argparse.Namespace) -> None:
         created_at=timestamp,
         updated_at=timestamp,
         breakdown=breakdown,
+        due_date=args.due,
     )
     tasks.append(task)
     if breakdown:
@@ -784,10 +791,25 @@ def cmd_add(args: argparse.Namespace) -> None:
                 print(f"Task kept. Partial output at: {project_dir}")
 
 
+_SORT_KEY_FNS = {
+    "id": lambda t: t.id,
+    "due_date": lambda t: (t.due_date or ""),
+    "level": lambda t: t.level,
+    "status": lambda t: t.status,
+    "created_at": lambda t: t.created_at,
+    "updated_at": lambda t: t.updated_at,
+    "title": lambda t: t.title.lower(),
+}
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     if args.status:
         tasks = [task for task in tasks if task.status == args.status]
+    sort_field = getattr(args, "sort", None) or "created_at"
+    sort_order = getattr(args, "order", "desc")
+    key_fn = _SORT_KEY_FNS.get(sort_field, lambda t: t.created_at)
+    tasks = sorted(tasks, key=key_fn, reverse=(sort_order == "desc"))
     args.usage_logger.emit("command", {"name": "list", "status": args.status})
     print(render_tasks(tasks))
 
@@ -832,6 +854,39 @@ def cmd_note(args: argparse.Namespace) -> None:
         {"name": "note", "task_id": args.id, "note_length": len(args.note)},
     )
     print(render_task(task))
+
+
+def cmd_due(args: argparse.Namespace) -> None:
+    tasks = load_tasks(args.storage)
+    task = find_task(tasks, args.id)
+    task.due_date = args.date
+    task.updated_at = now_iso()
+    save_tasks(args.storage, tasks)
+    args.usage_logger.emit("command", {"name": "due", "task_id": args.id, "date": args.date})
+    print(render_task(task))
+
+
+def cmd_focus(args: argparse.Namespace) -> None:
+    tasks = load_tasks(args.storage)
+    task = find_task(tasks, args.id)
+    task.daily_focus = not task.daily_focus
+    task.updated_at = now_iso()
+    save_tasks(args.storage, tasks)
+    state = "added to" if task.daily_focus else "removed from"
+    args.usage_logger.emit("command", {"name": "focus", "task_id": args.id, "focus": task.daily_focus})
+    print(f"Task {task.id} {state} daily focus.")
+    print(render_task(task))
+
+
+def cmd_focus_list(args: argparse.Namespace) -> None:
+    tasks = load_tasks(args.storage)
+    focus_tasks = [t for t in tasks if t.daily_focus]
+    args.usage_logger.emit("command", {"name": "focus-list"})
+    if not focus_tasks:
+        print("No daily focus tasks.")
+        return
+    print("Daily Focus Tasks:")
+    print(render_tasks(focus_tasks))
 
 
 def cmd_breakdown(args: argparse.Namespace) -> None:
@@ -934,6 +989,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser = subparsers.add_parser("add", help="Add a new task")
     add_parser.add_argument("title", help="Task title")
     add_parser.add_argument(
+        "--due",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Due date in YYYY-MM-DD format",
+    )
+    add_parser.add_argument(
         "--breakdown",
         action="store_true",
         help="Generate breakdown on add",
@@ -980,6 +1041,18 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser = subparsers.add_parser("list", help="List tasks")
     list_parser.add_argument(
         "--status", choices=["open", "done"], help="Filter by status"
+    )
+    list_parser.add_argument(
+        "--sort",
+        choices=["id", "due_date", "level", "status", "created_at", "updated_at", "title"],
+        default="created_at",
+        help="Sort field (default: created_at)",
+    )
+    list_parser.add_argument(
+        "--order",
+        choices=["asc", "desc"],
+        default="desc",
+        help="Sort direction (default: desc)",
     )
     list_parser.set_defaults(func=cmd_list)
 
@@ -1042,6 +1115,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Maximum breakdown depth (default: {DEFAULT_MAX_LEVEL})",
     )
     breakdown_parser.set_defaults(func=cmd_breakdown)
+
+    due_parser = subparsers.add_parser("due", help="Set or update the due date of a task")
+    due_parser.add_argument("id", type=int, help="Task id")
+    due_parser.add_argument("date", metavar="YYYY-MM-DD", help="Due date (use '' to clear)")
+    due_parser.set_defaults(func=cmd_due)
+
+    focus_parser = subparsers.add_parser("focus", help="Toggle daily focus for a task")
+    focus_parser.add_argument("id", type=int, help="Task id")
+    focus_parser.set_defaults(func=cmd_focus)
+
+    focus_list_parser = subparsers.add_parser("focus-list", help="List daily focus tasks")
+    focus_list_parser.set_defaults(func=cmd_focus_list)
 
     return parser
 

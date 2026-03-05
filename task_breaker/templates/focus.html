@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Daily Focus{% endblock %}
+{% block content %}
+<h2>⭐ Daily Focus</h2>
+<p>Tasks you have marked as daily focus items.</p>
+
+{% if tasks %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Due Date</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.id }}</td>
+      <td>
+        <a href="/tasks/{{ task.id }}">{{ task.title }}</a>
+        {% if task.atomic %}<small> 🔒 atomic</small>{% endif %}
+      </td>
+      <td>
+        {% if task.status == "done" %}
+          <mark class="status-done">done</mark>
+        {% else %}
+          <mark class="status-open">open</mark>
+        {% endif %}
+      </td>
+      <td>
+        {% if task.due_date %}
+          {{ task.due_date.date().isoformat() }}
+        {% else %}
+          <span style="color:#aaa">—</span>
+        {% endif %}
+      </td>
+      <td>
+        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn" title="Remove from daily focus">⭐ Unstar</button>
+        </form>
+        {% if task.status == "open" %}
+        <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn">✓ Complete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No daily focus tasks yet. Star a task from the <a href="/">task list</a> to add it here.</p>
+{% endif %}
+{% endblock %}
