@@ -2,22 +2,35 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import HTTPException
+from sqlalchemy import asc, case, desc
 from sqlalchemy.orm import Session
 
 from .config import settings as app_settings
 from .copilot_integration import breakdown_task as _breakdown_task
 from .models import TaskORM
 
+_SORT_FIELDS = {
+    "id": TaskORM.id,
+    "due_date": TaskORM.due_date,
+    "level": TaskORM.level,
+    "status": TaskORM.status,
+    "created_at": TaskORM.created_at,
+    "updated_at": TaskORM.updated_at,
+    "title": TaskORM.title,
+}
+
 
 class TaskService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list_tasks(self, status: Optional[str] = None) -> List[TaskORM]:
+    def list_tasks(self, status: Optional[str] = None, sort_by: Optional[str] = None, sort_order: str = "desc") -> List[TaskORM]:
         query = self.db.query(TaskORM)
         if status:
             query = query.filter(TaskORM.status == status)
-        return query.order_by(TaskORM.created_at.desc()).all()
+        field = _SORT_FIELDS.get(sort_by or "created_at", TaskORM.created_at)
+        order_fn = asc if sort_order == "asc" else desc
+        return query.order_by(order_fn(field)).all()
 
     def get_task_tree(self) -> List[dict]:
         """Return all tasks organized as a hierarchical tree structure."""
@@ -55,6 +68,8 @@ class TaskService:
             "source": task.source,
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "due_date": task.due_date.date().isoformat() if task.due_date else None,
+            "daily_focus": task.daily_focus,
             "children": [
                 TaskService._build_tree_node(c, children_map) for c in children
             ],
@@ -66,8 +81,8 @@ class TaskService:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
         return task
 
-    def create_task(self, title: str) -> TaskORM:
-        task = TaskORM(title=title)
+    def create_task(self, title: str, due_date: Optional[datetime] = None) -> TaskORM:
+        task = TaskORM(title=title, due_date=due_date)
         self.db.add(task)
         self.db.commit()
         self.db.refresh(task)
@@ -93,6 +108,49 @@ class TaskService:
         task = self.get_task(task_id)
         self.db.delete(task)
         self.db.commit()
+        return task
+
+    def toggle_focus(self, task_id: int) -> TaskORM:
+        task = self.get_task(task_id)
+        task.daily_focus = not task.daily_focus
+        task.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def list_focus_tasks(self) -> List[TaskORM]:
+        return (
+            self.db.query(TaskORM)
+            .filter(TaskORM.daily_focus.is_(True))
+            .order_by(
+                TaskORM.focus_order.is_(None),  # NULLs last
+                TaskORM.focus_order.asc(),
+                TaskORM.updated_at.desc(),
+            )
+            .all()
+        )
+
+    def reorder_focus(self, ordered_ids: List[int]) -> None:
+        """Persist focus_order for all supplied task IDs in a single UPDATE."""
+        if not ordered_ids:
+            return
+        # Build a CASE expression: CASE WHEN id=1 THEN 0 WHEN id=2 THEN 1 … END
+        order_case = case(
+            {task_id: pos for pos, task_id in enumerate(ordered_ids)},
+            value=TaskORM.id,
+        )
+        self.db.query(TaskORM).filter(TaskORM.id.in_(ordered_ids)).update(
+            {"focus_order": order_case},
+            synchronize_session=False,
+        )
+        self.db.commit()
+
+    def set_due_date(self, task_id: int, due_date: Optional[datetime]) -> TaskORM:
+        task = self.get_task(task_id)
+        task.due_date = due_date
+        task.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(task)
         return task
 
     def find_stale_tasks(self, older_than_days: int) -> List[TaskORM]:

@@ -4,23 +4,42 @@
 <h2>Settings</h2>
 
 <article>
+  <h4>WorkIQ EULA</h4>
+  {% if workiq_eula_accepted %}
+  <p>✅ WorkIQ EULA has been accepted. WorkIQ features are enabled.</p>
+  <small>EULA: <a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">{{ workiq_eula_url }}</a></small>
+  {% else %}
+  <p>⚠️ WorkIQ features require EULA acceptance before use.</p>
+  <p>Please review the End User License Agreement:</p>
+  <p><a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">{{ workiq_eula_url }}</a></p>
+  <form action="/settings/workiq-eula" method="post">
+    <label>
+      <input type="checkbox" id="eula-confirm" required />
+      I have read and accept the <a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">WorkIQ EULA</a>
+    </label>
+    <button type="submit">Accept EULA</button>
+  </form>
+  {% endif %}
+</article>
+
+<article>
   <form action="/settings" method="post">
     <label>
-      <input type="checkbox" name="auto_breakdown_enabled" value="on"
-             {% if settings.auto_breakdown_enabled %}checked{% endif %} />
+      <input type="checkbox" name="auto_breakdown_enabled" value="on" {% if settings.auto_breakdown_enabled %}checked{%
+        endif %} />
       Enable auto-breakdown scheduler
     </label>
 
     <label for="threshold">
       Auto-breakdown threshold (days)
       <input type="number" id="threshold" name="auto_breakdown_threshold_days"
-             value="{{ settings.auto_breakdown_threshold_days }}" min="1" />
+        value="{{ settings.auto_breakdown_threshold_days }}" min="1" />
     </label>
 
     <label for="interval">
       Check interval (hours)
-      <input type="number" id="interval" name="check_interval_hours"
-             value="{{ settings.check_interval_hours }}" min="1" />
+      <input type="number" id="interval" name="check_interval_hours" value="{{ settings.check_interval_hours }}"
+        min="1" />
     </label>
 
     <button type="submit">Save</button>
@@ -31,10 +50,22 @@
   <h4>Current configuration</h4>
   <table>
     <tbody>
-      <tr><td>AI Model</td><td><code>{{ settings.model }}</code></td></tr>
-      <tr><td>Max breakdown level</td><td>{{ settings.max_level }}</td></tr>
-      <tr><td>WorkIQ command</td><td><code>{{ settings.workiq_command }}</code></td></tr>
-      <tr><td>WorkIQ args</td><td><code>{{ settings.workiq_args | join(' ') }}</code></td></tr>
+      <tr>
+        <td>AI Model</td>
+        <td><code>{{ settings.model }}</code></td>
+      </tr>
+      <tr>
+        <td>Max breakdown level</td>
+        <td>{{ settings.max_level }}</td>
+      </tr>
+      <tr>
+        <td>WorkIQ command</td>
+        <td><code>{{ settings.workiq_command }}</code></td>
+      </tr>
+      <tr>
+        <td>WorkIQ args</td>
+        <td><code>{{ settings.workiq_args | join(' ') }}</code></td>
+      </tr>
     </tbody>
   </table>
   <small>To change model / WorkIQ settings, set environment variables or edit <code>.env</code>.</small>

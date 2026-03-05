@@ -2,52 +2,197 @@
 
 Functions here are standalone async callables used by services.
 """
+
 import json
 import os
 import re
 import shutil
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from copilot import CopilotClient
 from copilot.generated.session_events import SessionEventType
+
+WORKIQ_EULA_URL = "https://github.com/microsoft/work-iq-mcp"
+
+
+def _default_eula_path() -> Path:
+    return Path.home() / ".task-breaker" / "workiq_eula.json"
+
+
+def is_workiq_eula_accepted(eula_path: Optional[Path] = None) -> bool:
+    """Check whether the WorkIQ EULA has been accepted locally."""
+    path = eula_path or _default_eula_path()
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return bool(data.get("accepted"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def save_workiq_eula_acceptance(eula_path: Optional[Path] = None) -> None:
+    """Record that the user accepted the WorkIQ EULA."""
+    path = eula_path or _default_eula_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "accepted": True,
+        "accepted_at": datetime.now(timezone.utc).isoformat(),
+        "eula_url": WORKIQ_EULA_URL,
+    }
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+async def accept_workiq_eula_via_mcp(
+    workiq_command: str = "npx",
+    workiq_args: Optional[List[str]] = None,
+    model: str = "gpt-4.1",
+    eula_path: Optional[Path] = None,
+    debug: bool = False,
+) -> bool:
+    """Start the WorkIQ MCP server and call the accept_eula tool.
+
+    Returns True if the acceptance succeeded.
+    """
+    client_opts: Dict[str, Any] = {}
+    if debug:
+        client_opts["log_level"] = "debug"
+    cli_path = resolve_copilot_cli_path(debug=debug)
+    if cli_path:
+        client_opts["cli_path"] = cli_path
+
+    client = CopilotClient(client_opts)
+    await client.start()
+
+    _workiq_args = workiq_args or ["-y", "@microsoft/workiq", "mcp"]
+    mcp_command = workiq_command
+    mcp_args = [token for arg in _workiq_args for token in arg.split()]
+    if sys.platform == "win32":
+        mcp_args = ["/c", mcp_command] + mcp_args
+        mcp_command = "cmd"
+
+    def _approve_eula_permission(request: dict, context: dict) -> dict:
+        """Auto-approve the accept_eula tool call (user already confirmed)."""
+        return {"kind": "approved"}
+
+    session_config: Dict[str, Any] = {
+        "model": model,
+        "on_permission_request": _approve_eula_permission,
+        "system_message": {
+            "content": (
+                "You are a helper that accepts the WorkIQ EULA. "
+                "Call the accept_eula tool immediately. Do not do anything else."
+            )
+        },
+        "mcp_servers": {
+            "workiq": {
+                "type": "local",
+                "command": mcp_command,
+                "args": mcp_args,
+                "tools": ["accept_eula"],
+                "timeout": 60000,
+            }
+        },
+    }
+
+    session = await client.create_session(session_config)
+
+    success = False
+
+    def _track_tool_call(event: Any) -> None:
+        nonlocal success
+        data = event.data
+        mcp_tool = getattr(data, "mcp_tool_name", None)
+        if mcp_tool == "accept_eula":
+            success = True
+
+    session.on(_track_tool_call)
+
+    try:
+        await session.send_and_wait(
+            {
+                "prompt": (
+                    "The user has reviewed and accepted the WorkIQ EULA at "
+                    f"{WORKIQ_EULA_URL}. "
+                    "Call the accept_eula tool now to record their acceptance."
+                )
+            },
+            timeout=60000,
+        )
+    except Exception as exc:
+        if debug:
+            print(f"[DEBUG] accept_eula error: {exc}", file=sys.stderr)
+    finally:
+        await session.destroy()
+        await client.stop()
+
+    if success:
+        save_workiq_eula_acceptance(eula_path)
+
+    return success
 
 
 def resolve_copilot_cli_path(debug: bool = False) -> Optional[str]:
     """On Windows, resolve the full path to the copilot CLI."""
     if sys.platform != "win32":
         if debug:
-            print("[DEBUG] resolve_copilot_cli_path: not Windows, skipping", file=sys.stderr)
+            print(
+                "[DEBUG] resolve_copilot_cli_path: not Windows, skipping",
+                file=sys.stderr,
+            )
         return None
     env_path = os.environ.get("COPILOT_CLI_PATH")
     if env_path:
         if debug:
-            print(f"[DEBUG] resolve_copilot_cli_path: COPILOT_CLI_PATH is set to '{env_path}'", file=sys.stderr)
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: COPILOT_CLI_PATH is set to '{env_path}'",
+                file=sys.stderr,
+            )
         return None
     found = shutil.which("copilot")
     if debug:
-        print(f"[DEBUG] resolve_copilot_cli_path: shutil.which('copilot') = '{found}'", file=sys.stderr)
+        print(
+            f"[DEBUG] resolve_copilot_cli_path: shutil.which('copilot') = '{found}'",
+            file=sys.stderr,
+        )
     if found:
         if debug:
-            print(f"[DEBUG] resolve_copilot_cli_path: using resolved path '{found}'", file=sys.stderr)
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: using resolved path '{found}'",
+                file=sys.stderr,
+            )
         return found
     appdata = os.environ.get("APPDATA", "")
     if debug:
-        print(f"[DEBUG] resolve_copilot_cli_path: APPDATA = '{appdata}'", file=sys.stderr)
+        print(
+            f"[DEBUG] resolve_copilot_cli_path: APPDATA = '{appdata}'", file=sys.stderr
+        )
     if appdata:
         cmd_path = os.path.join(appdata, "npm", "copilot.cmd")
         exists = os.path.isfile(cmd_path)
         if debug:
-            print(f"[DEBUG] resolve_copilot_cli_path: checking '{cmd_path}' exists={exists}", file=sys.stderr)
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: checking '{cmd_path}' exists={exists}",
+                file=sys.stderr,
+            )
         if exists:
             return cmd_path
     if debug:
         npm_dir = os.path.join(appdata, "npm") if appdata else ""
         if npm_dir and os.path.isdir(npm_dir):
             copilot_files = [f for f in os.listdir(npm_dir) if "copilot" in f.lower()]
-            print(f"[DEBUG] resolve_copilot_cli_path: copilot-related files in npm dir: {copilot_files}", file=sys.stderr)
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: copilot-related files in npm dir: {copilot_files}",
+                file=sys.stderr,
+            )
         else:
-            print(f"[DEBUG] resolve_copilot_cli_path: npm dir '{npm_dir}' not found", file=sys.stderr)
+            print(
+                f"[DEBUG] resolve_copilot_cli_path: npm dir '{npm_dir}' not found",
+                file=sys.stderr,
+            )
     return None
 
 
@@ -83,7 +228,11 @@ async def breakdown_task(
         if use_workiq:
             usage_logger.emit(
                 "workiq",
-                {"command": workiq_command, "args": workiq_args, "source_command": source_command},
+                {
+                    "command": workiq_command,
+                    "args": workiq_args,
+                    "source_command": source_command,
+                },
             )
 
     session_config: Dict[str, Any] = {
@@ -118,12 +267,35 @@ async def breakdown_task(
             }
         }
 
+        def _workiq_permission_handler(request: dict, context: dict) -> dict:
+            """Auto-approve WorkIQ MCP tool calls; user opted in by enabling WorkIQ."""
+            kind = request.get("kind", "unknown")
+            if debug:
+                print(
+                    f"[DEBUG] permission_request: kind={kind!r} request={request}",
+                    file=sys.stderr,
+                )
+            decision = {"kind": "approved"}
+            if debug:
+                print(
+                    f"[DEBUG] permission_request: auto-approved (kind={kind!r})",
+                    file=sys.stderr,
+                )
+            return decision
+
+        session_config["on_permission_request"] = _workiq_permission_handler
+
     if debug:
-        print(f"[DEBUG] session_config = {json.dumps(session_config, indent=2)}", file=sys.stderr)
+        _loggable = {k: v for k, v in session_config.items() if not callable(v)}
+        print(
+            f"[DEBUG] session_config = {json.dumps(_loggable, indent=2)}",
+            file=sys.stderr,
+        )
 
     session = await client.create_session(session_config)
 
     if debug:
+
         def debug_handler(event: Any) -> None:
             data = event.data
             mcp_server = getattr(data, "mcp_server_name", None)
@@ -139,10 +311,19 @@ async def breakdown_task(
             if tool_name:
                 parts.append(f"tool={tool_name}")
             if content:
-                parts.append(f"content={content[:200]}..." if len(str(content)) > 200 else f"content={content}")
+                parts.append(
+                    f"content={content[:200]}..."
+                    if len(str(content)) > 200
+                    else f"content={content}"
+                )
             if result:
-                parts.append(f"result={str(result)[:200]}..." if len(str(result)) > 200 else f"result={result}")
+                parts.append(
+                    f"result={str(result)[:200]}..."
+                    if len(str(result)) > 200
+                    else f"result={result}"
+                )
             print(" | ".join(parts), file=sys.stderr)
+
         session.on(debug_handler)
 
     if use_workiq:
@@ -299,7 +480,9 @@ async def implement_task(
             "Follow the breakdown steps as a guide for the implementation."
         )
     else:
-        impl_detail = f"Task: {task_title}\n\nCreate a complete project with all necessary files."
+        impl_detail = (
+            f"Task: {task_title}\n\nCreate a complete project with all necessary files."
+        )
 
     print(f"Implementing task in: {project_dir}")
     try:
@@ -344,7 +527,13 @@ async def implement_task(
                 break
             if any(
                 kw in last_content.lower()
-                for kw in ["cannot", "unable", "could not", "please clarify", "please provide"]
+                for kw in [
+                    "cannot",
+                    "unable",
+                    "could not",
+                    "please clarify",
+                    "please provide",
+                ]
             ):
                 break
             print(f"Continuing implementation (step {i + 2})...")
