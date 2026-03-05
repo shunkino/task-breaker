@@ -10,6 +10,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .copilot_integration import (
+    accept_workiq_eula_via_mcp,
+    is_workiq_eula_accepted,
+    save_workiq_eula_acceptance,
+    WORKIQ_EULA_URL,
+)
 from .database import get_db, init_db
 from .scheduler import start_scheduler, stop_scheduler
 from .services import BreakdownService, TaskService
@@ -70,7 +76,9 @@ def api_create_task(body: Dict[str, Any], db: Session = Depends(get_db)):
     if body.get("due_date"):
         try:
             due_date = datetime.combine(
-                _date.fromisoformat(body["due_date"]), datetime.min.time(), tzinfo=timezone.utc
+                _date.fromisoformat(body["due_date"]),
+                datetime.min.time(),
+                tzinfo=timezone.utc,
             )
         except ValueError:
             raise HTTPException(status_code=422, detail="due_date must be YYYY-MM-DD")
@@ -92,7 +100,9 @@ def api_reorder_focus(body: Dict[str, Any], db: Session = Depends(get_db)):
     if not isinstance(ordered_ids, list):
         raise HTTPException(status_code=422, detail="ordered_ids must be a list")
     if not all(isinstance(i, int) for i in ordered_ids):
-        raise HTTPException(status_code=422, detail="ordered_ids must contain only integers")
+        raise HTTPException(
+            status_code=422, detail="ordered_ids must contain only integers"
+        )
     svc = TaskService(db)
     svc.reorder_focus(ordered_ids)
 
@@ -155,6 +165,14 @@ async def api_breakdown_task(
     opts = body or {}
     model = opts.get("model", settings.model)
     use_workiq = not opts.get("no_workiq", False)
+    if use_workiq and not is_workiq_eula_accepted(settings.workiq_eula_path):
+        raise HTTPException(
+            status_code=428,
+            detail=(
+                "WorkIQ EULA has not been accepted. "
+                "Please accept the EULA in Settings before using WorkIQ features."
+            ),
+        )
     steps = await BreakdownService.breakdown_task(
         task, model=model, use_workiq=use_workiq
     )
@@ -172,6 +190,8 @@ def api_get_settings():
         "check_interval_hours": settings.check_interval_hours,
         "model": settings.model,
         "max_level": settings.max_level,
+        "workiq_eula_accepted": is_workiq_eula_accepted(settings.workiq_eula_path),
+        "workiq_eula_url": WORKIQ_EULA_URL,
     }
 
 
@@ -186,6 +206,32 @@ def api_update_settings(body: Dict[str, Any]):
         if key in body:
             object.__setattr__(settings, key, body[key])
     return api_get_settings()
+
+
+@app.get("/api/workiq-eula", response_model=Dict[str, Any])
+def api_get_workiq_eula():
+    """Return current WorkIQ EULA acceptance status."""
+    return {
+        "accepted": is_workiq_eula_accepted(settings.workiq_eula_path),
+        "eula_url": WORKIQ_EULA_URL,
+    }
+
+
+@app.post("/api/workiq-eula/accept", response_model=Dict[str, Any])
+async def api_accept_workiq_eula():
+    """Accept the WorkIQ EULA. Calls accept_eula on the MCP server."""
+    if is_workiq_eula_accepted(settings.workiq_eula_path):
+        return {"accepted": True, "message": "EULA already accepted."}
+    success = await accept_workiq_eula_via_mcp(
+        workiq_command=settings.workiq_command,
+        workiq_args=settings.workiq_args,
+        model=settings.model,
+        eula_path=settings.workiq_eula_path,
+    )
+    if not success:
+        # Best-effort: record locally even if MCP call didn't confirm
+        save_workiq_eula_acceptance(settings.workiq_eula_path)
+    return {"accepted": True, "message": "WorkIQ EULA accepted."}
 
 
 # ---------------------------------------------------------------------------
@@ -203,13 +249,14 @@ def web_index(
     svc = TaskService(db)
     tasks = svc.list_tasks(sort_by=sort, sort_order=order)
     return templates.TemplateResponse(
-        "index.html", {
+        "index.html",
+        {
             "request": request,
             "tasks": tasks,
             "sort": sort or "created_at",
             "order": order,
             "today": _date.today(),
-        }
+        },
     )
 
 
@@ -252,9 +299,7 @@ def web_set_due_date(
 def web_tree(request: Request, db: Session = Depends(get_db)):
     svc = TaskService(db)
     tree = svc.get_task_tree()
-    return templates.TemplateResponse(
-        "tree.html", {"request": request, "tree": tree}
-    )
+    return templates.TemplateResponse("tree.html", {"request": request, "tree": tree})
 
 
 @app.post("/tasks", response_class=HTMLResponse)
@@ -340,7 +385,8 @@ async def web_breakdown_task(
         try:
             _svc = TaskService(_db)
             _task = _svc.get_task(task_id)
-            steps = await BreakdownService.breakdown_task(_task)
+            use_workiq = is_workiq_eula_accepted(settings.workiq_eula_path)
+            steps = await BreakdownService.breakdown_task(_task, use_workiq=use_workiq)
             _task = _svc.update_breakdown(task_id, steps)
             _svc.create_child_tasks(_task, steps, settings.max_level)
         finally:
@@ -356,7 +402,13 @@ async def web_breakdown_task(
 @app.get("/settings", response_class=HTMLResponse)
 def web_settings(request: Request):
     return templates.TemplateResponse(
-        "settings.html", {"request": request, "settings": settings}
+        "settings.html",
+        {
+            "request": request,
+            "settings": settings,
+            "workiq_eula_accepted": is_workiq_eula_accepted(settings.workiq_eula_path),
+            "workiq_eula_url": WORKIQ_EULA_URL,
+        },
     )
 
 
@@ -374,6 +426,21 @@ def web_update_settings(
         settings, "auto_breakdown_threshold_days", auto_breakdown_threshold_days
     )
     object.__setattr__(settings, "check_interval_hours", check_interval_hours)
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.post("/settings/workiq-eula", response_class=HTMLResponse)
+async def web_accept_workiq_eula(request: Request):
+    """Accept the WorkIQ EULA via the web settings page."""
+    if not is_workiq_eula_accepted(settings.workiq_eula_path):
+        success = await accept_workiq_eula_via_mcp(
+            workiq_command=settings.workiq_command,
+            workiq_args=settings.workiq_args,
+            model=settings.model,
+            eula_path=settings.workiq_eula_path,
+        )
+        if not success:
+            save_workiq_eula_acceptance(settings.workiq_eula_path)
     return RedirectResponse(url="/settings", status_code=303)
 
 

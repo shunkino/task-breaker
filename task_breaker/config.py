@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="TASK_BREAKER_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="TASK_BREAKER_", env_file=".env", extra="ignore"
+    )
 
     data_dir: Path = Path.home() / ".task-breaker"
     model: str = "gpt-4.1"
@@ -21,6 +23,10 @@ class Settings(BaseSettings):
     @property
     def db_url(self) -> str:
         return f"sqlite:///{self.data_dir}/tasks.db"
+
+    @property
+    def workiq_eula_path(self) -> Path:
+        return self.data_dir / "workiq_eula.json"
 
 
 settings = Settings()

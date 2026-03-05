@@ -17,7 +17,165 @@ APP_NAME = "task-breaker"
 DEFAULT_MODEL = "gpt-4.1"
 DEFAULT_STORAGE = os.path.expanduser("~/.task-breaker/tasks.json")
 DEFAULT_USAGE_LOG = os.path.expanduser("~/.task-breaker/usage.log")
+DEFAULT_EULA_PATH = os.path.expanduser("~/.task-breaker/workiq_eula.json")
 DEFAULT_MAX_LEVEL = 3
+WORKIQ_EULA_URL = "https://github.com/microsoft/work-iq-mcp"
+
+
+def is_workiq_eula_accepted(eula_path: str = DEFAULT_EULA_PATH) -> bool:
+    """Check whether the WorkIQ EULA has been accepted locally."""
+    if not os.path.exists(eula_path):
+        return False
+    try:
+        with open(eula_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return bool(data.get("accepted"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def save_workiq_eula_acceptance(eula_path: str = DEFAULT_EULA_PATH) -> None:
+    """Record that the user accepted the WorkIQ EULA."""
+    os.makedirs(os.path.dirname(eula_path), exist_ok=True)
+    data = {
+        "accepted": True,
+        "accepted_at": now_iso(),
+        "eula_url": WORKIQ_EULA_URL,
+    }
+    with open(eula_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def prompt_eula_acceptance(eula_path: str = DEFAULT_EULA_PATH) -> bool:
+    """Interactively ask the user to accept the WorkIQ EULA. Returns True if accepted."""
+    print("\n" + "=" * 60)
+    print("WorkIQ End User License Agreement (EULA)")
+    print("=" * 60)
+    print(f"\nBefore using WorkIQ, you must accept the EULA.")
+    print(f"Please review the EULA at:\n  {WORKIQ_EULA_URL}\n")
+    answer = input("Do you accept the WorkIQ EULA? [y/N]: ").strip().lower()
+    if answer in ("y", "yes"):
+        return True
+    return False
+
+
+def ensure_workiq_eula(args: argparse.Namespace) -> bool:
+    """Check EULA acceptance; prompt if needed. Returns True if accepted."""
+    eula_path = getattr(args, "eula_path", DEFAULT_EULA_PATH)
+    if is_workiq_eula_accepted(eula_path):
+        return True
+    if not prompt_eula_acceptance(eula_path):
+        print(
+            "\nWorkIQ EULA not accepted. WorkIQ features are disabled."
+            "\nYou can accept later with: task-breaker workiq-eula",
+            file=sys.stderr,
+        )
+        return False
+    # User accepted in CLI — now call accept_eula on the MCP server
+    print("Registering EULA acceptance with WorkIQ...")
+    success = asyncio.run(
+        accept_workiq_eula_via_mcp(
+            workiq_command=getattr(args, "workiq_command", "npx"),
+            workiq_args=getattr(
+                args, "workiq_args", ["-y", "@microsoft/workiq", "mcp"]
+            ),
+            model=getattr(args, "model", DEFAULT_MODEL),
+            eula_path=eula_path,
+            debug=getattr(args, "debug", False),
+        )
+    )
+    if success:
+        print("WorkIQ EULA accepted successfully.")
+    else:
+        # Still save locally — the MCP call is best-effort
+        save_workiq_eula_acceptance(eula_path)
+        print("EULA acceptance recorded locally.")
+    return True
+
+
+async def accept_workiq_eula_via_mcp(
+    workiq_command: str = "npx",
+    workiq_args: Optional[List[str]] = None,
+    model: str = DEFAULT_MODEL,
+    eula_path: str = DEFAULT_EULA_PATH,
+    debug: bool = False,
+) -> bool:
+    """Start the WorkIQ MCP server and call the accept_eula tool."""
+    client_opts: Dict[str, Any] = {}
+    if debug:
+        client_opts["log_level"] = "debug"
+    cli_path = resolve_copilot_cli_path(debug=debug)
+    if cli_path:
+        client_opts["cli_path"] = cli_path
+
+    client = CopilotClient(client_opts)
+    await client.start()
+
+    _workiq_args = workiq_args or ["-y", "@microsoft/workiq", "mcp"]
+    mcp_command = workiq_command
+    mcp_args = [token for arg in _workiq_args for token in arg.split()]
+    if sys.platform == "win32":
+        mcp_args = ["/c", mcp_command] + mcp_args
+        mcp_command = "cmd"
+
+    def _approve_eula_permission(request: dict, context: dict) -> dict:
+        """Auto-approve the accept_eula tool call (user already confirmed)."""
+        return {"kind": "approved"}
+
+    session_config: Dict[str, Any] = {
+        "model": model,
+        "on_permission_request": _approve_eula_permission,
+        "system_message": {
+            "content": (
+                "You are a helper that accepts the WorkIQ EULA. "
+                "Call the accept_eula tool immediately. Do not do anything else."
+            )
+        },
+        "mcp_servers": {
+            "workiq": {
+                "type": "local",
+                "command": mcp_command,
+                "args": mcp_args,
+                "tools": ["accept_eula"],
+                "timeout": 60000,
+            }
+        },
+    }
+
+    session = await client.create_session(session_config)
+    success = False
+
+    def _track_tool_call(event: Any) -> None:
+        nonlocal success
+        data = event.data
+        mcp_tool = getattr(data, "mcp_tool_name", None)
+        if mcp_tool == "accept_eula":
+            success = True
+
+    session.on(_track_tool_call)
+
+    try:
+        await session.send_and_wait(
+            {
+                "prompt": (
+                    "The user has reviewed and accepted the WorkIQ EULA at "
+                    f"{WORKIQ_EULA_URL}. "
+                    "Call the accept_eula tool now to record their acceptance."
+                )
+            },
+            timeout=60000,
+        )
+    except Exception as exc:
+        if debug:
+            print(f"[DEBUG] accept_eula error: {exc}", file=sys.stderr)
+    finally:
+        await session.destroy()
+        await client.stop()
+
+    if success:
+        save_workiq_eula_acceptance(eula_path)
+
+    return success
 
 
 @dataclass
@@ -720,17 +878,50 @@ async def implement_task(
     return project_dir, success
 
 
+def cmd_workiq_eula(args: argparse.Namespace) -> None:
+    """Show EULA status or accept the WorkIQ EULA."""
+    eula_path = getattr(args, "eula_path", DEFAULT_EULA_PATH)
+    if is_workiq_eula_accepted(eula_path):
+        print(f"WorkIQ EULA already accepted.")
+        print(f"EULA: {WORKIQ_EULA_URL}")
+        return
+    if not prompt_eula_acceptance(eula_path):
+        print("EULA not accepted.", file=sys.stderr)
+        sys.exit(1)
+    print("Registering EULA acceptance with WorkIQ...")
+    success = asyncio.run(
+        accept_workiq_eula_via_mcp(
+            workiq_command=getattr(args, "workiq_command", "npx"),
+            workiq_args=getattr(
+                args, "workiq_args", ["-y", "@microsoft/workiq", "mcp"]
+            ),
+            model=getattr(args, "model", DEFAULT_MODEL),
+            eula_path=eula_path,
+            debug=getattr(args, "debug", False),
+        )
+    )
+    if success:
+        print("WorkIQ EULA accepted successfully.")
+    else:
+        save_workiq_eula_acceptance(eula_path)
+        print("EULA acceptance recorded locally.")
+
+
 def cmd_add(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task_id = next_task_id(tasks)
     timestamp = now_iso()
+    # Gate WorkIQ behind EULA acceptance
+    use_workiq = not args.no_workiq if args.breakdown else False
+    if use_workiq and not ensure_workiq_eula(args):
+        use_workiq = False
     args.usage_logger.emit(
         "command",
         {
             "name": "add",
             "breakdown": args.breakdown,
             "model": args.model if args.breakdown else None,
-            "workiq_enabled": not args.no_workiq if args.breakdown else None,
+            "workiq_enabled": use_workiq if args.breakdown else None,
         },
     )
     breakdown: List[str] = []
@@ -739,7 +930,7 @@ def cmd_add(args: argparse.Namespace) -> None:
             breakdown_task(
                 title=args.title,
                 model=args.model,
-                use_workiq=not args.no_workiq,
+                use_workiq=use_workiq,
                 workiq_command=args.workiq_command,
                 workiq_args=args.workiq_args,
                 usage_logger=args.usage_logger,
@@ -766,7 +957,7 @@ def cmd_add(args: argparse.Namespace) -> None:
             implement_task(
                 task=task,
                 model=args.model,
-                use_workiq=not args.no_workiq,
+                use_workiq=use_workiq,
                 workiq_command=args.workiq_command,
                 workiq_args=args.workiq_args,
                 debug=args.debug,
@@ -862,7 +1053,9 @@ def cmd_due(args: argparse.Namespace) -> None:
     task.due_date = args.date
     task.updated_at = now_iso()
     save_tasks(args.storage, tasks)
-    args.usage_logger.emit("command", {"name": "due", "task_id": args.id, "date": args.date})
+    args.usage_logger.emit(
+        "command", {"name": "due", "task_id": args.id, "date": args.date}
+    )
     print(render_task(task))
 
 
@@ -873,7 +1066,9 @@ def cmd_focus(args: argparse.Namespace) -> None:
     task.updated_at = now_iso()
     save_tasks(args.storage, tasks)
     state = "added to" if task.daily_focus else "removed from"
-    args.usage_logger.emit("command", {"name": "focus", "task_id": args.id, "focus": task.daily_focus})
+    args.usage_logger.emit(
+        "command", {"name": "focus", "task_id": args.id, "focus": task.daily_focus}
+    )
     print(f"Task {task.id} {state} daily focus.")
     print(render_task(task))
 
@@ -906,20 +1101,24 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+    # Gate WorkIQ behind EULA acceptance
+    use_workiq = not args.no_workiq
+    if use_workiq and not ensure_workiq_eula(args):
+        use_workiq = False
     args.usage_logger.emit(
         "command",
         {
             "name": "breakdown",
             "task_id": args.id,
             "model": args.model,
-            "workiq_enabled": not args.no_workiq,
+            "workiq_enabled": use_workiq,
         },
     )
     steps = asyncio.run(
         breakdown_task(
             title=task.title,
             model=args.model,
-            use_workiq=not args.no_workiq,
+            use_workiq=use_workiq,
             workiq_command=args.workiq_command,
             workiq_args=args.workiq_args,
             usage_logger=args.usage_logger,
@@ -938,7 +1137,7 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
             implement_task(
                 task=task,
                 model=args.model,
-                use_workiq=not args.no_workiq,
+                use_workiq=use_workiq,
                 workiq_command=args.workiq_command,
                 workiq_args=args.workiq_args,
                 debug=args.debug,
@@ -1044,7 +1243,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     list_parser.add_argument(
         "--sort",
-        choices=["id", "due_date", "level", "status", "created_at", "updated_at", "title"],
+        choices=[
+            "id",
+            "due_date",
+            "level",
+            "status",
+            "created_at",
+            "updated_at",
+            "title",
+        ],
         default="created_at",
         help="Sort field (default: created_at)",
     )
@@ -1116,17 +1323,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     breakdown_parser.set_defaults(func=cmd_breakdown)
 
-    due_parser = subparsers.add_parser("due", help="Set or update the due date of a task")
+    due_parser = subparsers.add_parser(
+        "due", help="Set or update the due date of a task"
+    )
     due_parser.add_argument("id", type=int, help="Task id")
-    due_parser.add_argument("date", metavar="YYYY-MM-DD", help="Due date (use '' to clear)")
+    due_parser.add_argument(
+        "date", metavar="YYYY-MM-DD", help="Due date (use '' to clear)"
+    )
     due_parser.set_defaults(func=cmd_due)
 
     focus_parser = subparsers.add_parser("focus", help="Toggle daily focus for a task")
     focus_parser.add_argument("id", type=int, help="Task id")
     focus_parser.set_defaults(func=cmd_focus)
 
-    focus_list_parser = subparsers.add_parser("focus-list", help="List daily focus tasks")
+    focus_list_parser = subparsers.add_parser(
+        "focus-list", help="List daily focus tasks"
+    )
     focus_list_parser.set_defaults(func=cmd_focus_list)
+
+    eula_parser = subparsers.add_parser(
+        "workiq-eula", help="Accept or check WorkIQ EULA status"
+    )
+    eula_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
+    eula_parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Copilot model (default: {DEFAULT_MODEL})",
+    )
+    eula_parser.add_argument(
+        "--workiq-command",
+        default="npx",
+        help="WorkIQ command (default: npx).",
+    )
+    eula_parser.add_argument(
+        "--workiq-args",
+        nargs="*",
+        default=["-y", "@microsoft/workiq", "mcp"],
+        help="Args for WorkIQ MCP server.",
+    )
+    eula_parser.set_defaults(func=cmd_workiq_eula)
 
     return parser
 
