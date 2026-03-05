@@ -14,10 +14,10 @@
   font-size: 0.85rem;
   line-height: 1.2;
   vertical-align: middle;
+  width: auto;
 }
 
 .focus-toggle-btn {
-  min-width: 2.2rem;
   text-align: center;
 }
 

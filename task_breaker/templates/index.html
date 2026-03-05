@@ -81,10 +81,12 @@
             {% endif %}
       </td>
       <td>
-        <button type="button" class="outline secondary small-btn focus-toggle-btn" data-task-id="{{ task.id }}"
-          data-is-focus="{{ 'true' if task.daily_focus else 'false' }}" title="Toggle daily focus">
-          <span class="focus-icon">{% if task.daily_focus %}⭐{% else %}☆{% endif %}</span>
-        </button>
+        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn focus-toggle-btn" data-task-id="{{ task.id }}"
+            data-is-focus="{{ 'true' if task.daily_focus else 'false' }}" title="Toggle daily focus">
+            <span class="focus-icon">{% if task.daily_focus %}⭐{% else %}☆{% endif %}</span>
+          </button>
+        </form>
         {% if task.status == "open" %}
         <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">✓ Complete</button>
