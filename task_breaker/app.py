@@ -85,6 +85,18 @@ def api_list_focus_tasks(db: Session = Depends(get_db)):
     return [_task_to_dict(t) for t in svc.list_focus_tasks()]
 
 
+@app.post("/api/tasks/focus/reorder", status_code=204)
+def api_reorder_focus(body: Dict[str, Any], db: Session = Depends(get_db)):
+    """Persist a new focus order. Body: {"ordered_ids": [1, 3, 2, ...]}"""
+    ordered_ids = body.get("ordered_ids", [])
+    if not isinstance(ordered_ids, list):
+        raise HTTPException(status_code=422, detail="ordered_ids must be a list")
+    if not all(isinstance(i, int) for i in ordered_ids):
+        raise HTTPException(status_code=422, detail="ordered_ids must contain only integers")
+    svc = TaskService(db)
+    svc.reorder_focus(ordered_ids)
+
+
 @app.get("/api/tasks/{task_id}", response_model=Dict[str, Any])
 def api_get_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)

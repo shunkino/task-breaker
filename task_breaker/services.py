@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, case, desc
 from sqlalchemy.orm import Session
 
 from .config import settings as app_settings
@@ -122,9 +122,28 @@ class TaskService:
         return (
             self.db.query(TaskORM)
             .filter(TaskORM.daily_focus.is_(True))
-            .order_by(TaskORM.updated_at.desc())
+            .order_by(
+                TaskORM.focus_order.is_(None),  # NULLs last
+                TaskORM.focus_order.asc(),
+                TaskORM.updated_at.desc(),
+            )
             .all()
         )
+
+    def reorder_focus(self, ordered_ids: List[int]) -> None:
+        """Persist focus_order for all supplied task IDs in a single UPDATE."""
+        if not ordered_ids:
+            return
+        # Build a CASE expression: CASE WHEN id=1 THEN 0 WHEN id=2 THEN 1 … END
+        order_case = case(
+            {task_id: pos for pos, task_id in enumerate(ordered_ids)},
+            value=TaskORM.id,
+        )
+        self.db.query(TaskORM).filter(TaskORM.id.in_(ordered_ids)).update(
+            {"focus_order": order_case},
+            synchronize_session=False,
+        )
+        self.db.commit()
 
     def set_due_date(self, task_id: int, due_date: Optional[datetime]) -> TaskORM:
         task = self.get_task(task_id)
