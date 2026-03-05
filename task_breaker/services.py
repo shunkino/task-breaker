@@ -24,7 +24,12 @@ class TaskService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list_tasks(self, status: Optional[str] = None, sort_by: Optional[str] = None, sort_order: str = "desc") -> List[TaskORM]:
+    def list_tasks(
+        self,
+        status: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        sort_order: str = "desc",
+    ) -> List[TaskORM]:
         query = self.db.query(TaskORM)
         if status:
             query = query.filter(TaskORM.status == status)
@@ -90,6 +95,14 @@ class TaskService:
     def complete_task(self, task_id: int) -> TaskORM:
         task = self.get_task(task_id)
         task.status = "done"
+        task.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def reopen_task(self, task_id: int) -> TaskORM:
+        task = self.get_task(task_id)
+        task.status = "open"
         task.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(task)

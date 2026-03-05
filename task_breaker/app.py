@@ -119,6 +119,12 @@ def api_complete_task(task_id: int, db: Session = Depends(get_db)):
     return _task_to_dict(svc.complete_task(task_id))
 
 
+@app.post("/api/tasks/{task_id}/reopen", response_model=Dict[str, Any])
+def api_reopen_task(task_id: int, db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    return _task_to_dict(svc.reopen_task(task_id))
+
+
 @app.post("/api/tasks/{task_id}/note", response_model=Dict[str, Any])
 def api_add_note(task_id: int, body: Dict[str, Any], db: Session = Depends(get_db)):
     note = body.get("note", "")
@@ -332,6 +338,13 @@ def web_complete_task(task_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/", status_code=303)
 
 
+@app.post("/tasks/{task_id}/reopen", response_class=HTMLResponse)
+def web_reopen_task(task_id: int, db: Session = Depends(get_db)):
+    svc = TaskService(db)
+    svc.reopen_task(task_id)
+    return RedirectResponse(url="/", status_code=303)
+
+
 @app.post("/tasks/{task_id}/delete", response_class=HTMLResponse)
 def web_delete_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)
@@ -389,7 +402,9 @@ async def web_breakdown_task(
             _svc = TaskService(_db)
             _task = _svc.get_task(task_id)
             use_workiq = is_workiq_eula_accepted(settings.workiq_eula_path)
-            steps = await BreakdownService.breakdown_task(_task, use_workiq=use_workiq, debug=settings.debug)
+            steps = await BreakdownService.breakdown_task(
+                _task, use_workiq=use_workiq, debug=settings.debug
+            )
             _task = _svc.update_breakdown(task_id, steps)
             _svc.create_child_tasks(_task, steps, settings.max_level)
         finally:

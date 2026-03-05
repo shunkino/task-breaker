@@ -19,16 +19,17 @@
     <label>
       Sort by
       <select name="sort">
-        {% for field in [("created_at","Created"), ("id","ID"), ("title","Title"), ("status","Status"), ("level","Level"), ("due_date","Due Date"), ("updated_at","Updated")] %}
-        <option value="{{ field[0] }}" {% if sort == field[0] %}selected{% endif %}>{{ field[1] }}</option>
+        {% for field in [("created_at","Created"), ("id","ID"), ("title","Title"), ("status","Status"),
+        ("level","Level"), ("due_date","Due Date"), ("updated_at","Updated")] %}
+        <option value="{{ field[0] }}" {% if sort==field[0] %}selected{% endif %}>{{ field[1] }}</option>
         {% endfor %}
       </select>
     </label>
     <label>
       Order
       <select name="order">
-        <option value="desc" {% if order == "desc" %}selected{% endif %}>Descending</option>
-        <option value="asc" {% if order == "asc" %}selected{% endif %}>Ascending</option>
+        <option value="desc" {% if order=="desc" %}selected{% endif %}>Descending</option>
+        <option value="asc" {% if order=="asc" %}selected{% endif %}>Ascending</option>
       </select>
     </label>
     <button type="submit" class="outline">Apply</button>
@@ -59,40 +60,42 @@
       </td>
       <td>
         {% if task.status == "done" %}
-          <mark class="status-done">done</mark>
+        <mark class="status-done">done</mark>
         {% else %}
-          <mark class="status-open">open</mark>
+        <mark class="status-open">open</mark>
         {% endif %}
       </td>
       <td>{{ task.level }}</td>
       <td>
         {% if task.due_date %}
-          {% set due = task.due_date.date() %}
-          {% if task.status != "done" and due < today %}
-            <span style="color:var(--pico-color-red-500)">⚠️ {{ due.isoformat() }}</span>
-          {% elif task.status != "done" and (due - today).days <= 3 %}
-            <span style="color:var(--pico-color-amber-500)">⏰ {{ due.isoformat() }}</span>
-          {% else %}
+        {% set due = task.due_date.date() %}
+        {% if task.status != "done" and due < today %} <span style="color:var(--pico-color-red-500)">⚠️ {{
+          due.isoformat() }}</span>
+          {% elif task.status != "done" and (due - today).days <= 3 %} <span style="color:var(--pico-color-amber-500)">⏰
+            {{ due.isoformat() }}</span>
+            {% else %}
             {{ due.isoformat() }}
-          {% endif %}
-        {% else %}
-          <span style="color:#aaa">—</span>
-        {% endif %}
+            {% endif %}
+            {% else %}
+            <span style="color:#aaa">—</span>
+            {% endif %}
       </td>
       <td>
-        <button type="button" class="outline secondary small-btn focus-toggle-btn"
-                data-task-id="{{ task.id }}"
-                data-is-focus="{{ 'true' if task.daily_focus else 'false' }}"
-                title="Toggle daily focus">
+        <button type="button" class="outline secondary small-btn focus-toggle-btn" data-task-id="{{ task.id }}"
+          data-is-focus="{{ 'true' if task.daily_focus else 'false' }}" title="Toggle daily focus">
           <span class="focus-icon">{% if task.daily_focus %}⭐{% else %}☆{% endif %}</span>
         </button>
         {% if task.status == "open" %}
         <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">✓ Complete</button>
         </form>
+        {% else %}
+        <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn">↩ Reopen</button>
+        </form>
         {% endif %}
         <form action="/tasks/{{ task.id }}/delete" method="post" style="display:inline"
-              onsubmit="return confirm('Delete task {{ task.id }}?')">
+          onsubmit="return confirm('Delete task {{ task.id }}?')">
           <button type="submit" class="outline contrast small-btn">✕ Delete</button>
         </form>
       </td>
@@ -102,36 +105,36 @@
 </table>
 
 <script>
-(function () {
-  document.addEventListener('click', function(e) {
-    if (e.target.closest('.focus-toggle-btn')) {
-      e.preventDefault();
-      const btn = e.target.closest('.focus-toggle-btn');
-      const taskId = btn.dataset.taskId;
-      const isFocus = btn.dataset.isFocus === 'true';
+  (function () {
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('.focus-toggle-btn')) {
+        e.preventDefault();
+        const btn = e.target.closest('.focus-toggle-btn');
+        const taskId = btn.dataset.taskId;
+        const isFocus = btn.dataset.isFocus === 'true';
 
-      // Toggle via API
-      fetch(`/api/tasks/${taskId}/focus`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      .then(r => {
-        if (!r.ok) throw new Error('Toggle failed');
-        return r.json();
-      })
-      .then(task => {
-        // Update button UI
-        const icon = btn.querySelector('.focus-icon');
-        icon.textContent = task.daily_focus ? '⭐' : '☆';
-        btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
-      })
-      .catch(err => {
-        console.error('Failed to toggle focus:', err);
-        alert('Failed to toggle daily focus. Please try again.');
-      });
-    }
-  });
-})();
+        // Toggle via API
+        fetch(`/api/tasks/${taskId}/focus`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+          .then(r => {
+            if (!r.ok) throw new Error('Toggle failed');
+            return r.json();
+          })
+          .then(task => {
+            // Update button UI
+            const icon = btn.querySelector('.focus-icon');
+            icon.textContent = task.daily_focus ? '⭐' : '☆';
+            btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
+          })
+          .catch(err => {
+            console.error('Failed to toggle focus:', err);
+            alert('Failed to toggle daily focus. Please try again.');
+          });
+      }
+    });
+  })();
 </script>
 {% else %}
 <p>No tasks yet. Add one above!</p>

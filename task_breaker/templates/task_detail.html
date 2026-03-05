@@ -13,14 +13,14 @@
     <h2>{{ task.title }}</h2>
     <div>
       {% if task.status == "done" %}
-        <mark class="status-done">done</mark>
+      <mark class="status-done">done</mark>
       {% else %}
-        <mark class="status-open">open</mark>
+      <mark class="status-open">open</mark>
       {% endif %}
       {% if task.atomic %}<mark>🔒 atomic</mark>{% endif %}
       <small>Level {{ task.level }}</small>
       {% if task.parent_id and parent %}
-        &nbsp;·&nbsp; Parent: <a href="/tasks/{{ parent.id }}">#{{ parent.id }} {{ parent.title }}</a>
+      &nbsp;·&nbsp; Parent: <a href="/tasks/{{ parent.id }}">#{{ parent.id }} {{ parent.title }}</a>
       {% endif %}
       &nbsp;
       <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
@@ -33,17 +33,18 @@
 
   <section>
     <h4>Due Date</h4>
-    <form action="/tasks/{{ task.id }}/due" method="post" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+    <form action="/tasks/{{ task.id }}/due" method="post"
+      style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
       <input type="date" name="due_date" id="due_date_input_{{ task.id }}"
-             value="{{ task.due_date.date().isoformat() if task.due_date else '' }}" />
+        value="{{ task.due_date.date().isoformat() if task.due_date else '' }}" />
       <button type="submit" class="outline small-btn">Set due date</button>
       {% if task.due_date %}
       <button type="submit" class="outline contrast small-btn"
-              onclick="document.getElementById('due_date_input_{{ task.id }}').value=''">Clear</button>
+        onclick="document.getElementById('due_date_input_{{ task.id }}').value=''">Clear</button>
       {% endif %}
     </form>
     {% if task.due_date %}
-      <small>Current due date: {{ task.due_date.date().isoformat() }}</small>
+    <small>Current due date: {{ task.due_date.date().isoformat() }}</small>
     {% endif %}
   </section>
 
@@ -96,6 +97,11 @@
     &nbsp;
     <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
       <button type="submit" class="secondary">✓ Mark complete</button>
+    </form>
+    {% else %}
+    &nbsp;
+    <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
+      <button type="submit" class="secondary">↩ Reopen</button>
     </form>
     {% endif %}
   </footer>
