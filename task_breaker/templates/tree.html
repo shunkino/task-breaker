@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Task Hierarchy{% endblock %}
+{% block content %}
+<h2>Task Hierarchy</h2>
+
+{% macro render_node(node) %}
+<li>
+  <details open>
+    <summary>
+      <a href="/tasks/{{ node.id }}">#{{ node.id }}</a>
+      {% if node.status == "done" %}
+        <mark class="status-done">✓</mark>
+      {% else %}
+        <mark class="status-open">○</mark>
+      {% endif %}
+      {{ node.title }}
+      {% if node.atomic %}<small> 🔒 atomic</small>{% endif %}
+      {% if node.daily_focus %}<span class="focus-indicator" data-task-id="{{ node.id }}">⭐</span>{% else %}<span class="focus-indicator" data-task-id="{{ node.id }}">☆</span>{% endif %}
+      <small>(level {{ node.level }})</small>
+      <button type="button" class="outline secondary small-btn focus-toggle-btn"
+              data-task-id="{{ node.id }}"
+              data-is-focus="{{ 'true' if node.daily_focus else 'false' }}"
+              title="Toggle daily focus"
+              style="font-size:0.8rem;padding:0.1rem 0.3rem;margin-left:0.3rem">
+        <span class="focus-icon">{% if node.daily_focus %}⭐{% else %}☆{% endif %}</span>
+      </button>
+      {% if node.status == "open" %}
+      <button type="button" class="outline secondary small-btn complete-btn"
+              data-task-id="{{ node.id }}"
+              title="Complete task"
+              style="font-size:0.8rem;padding:0.1rem 0.3rem;margin-left:0.3rem">
+        ✓
+      </button>
+      {% endif %}
+    </summary>
+    {% if node.children %}
+    <ul>
+      {% for child in node.children %}
+        {{ render_node(child) }}
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </details>
+</li>
+{% endmacro %}
+
+{% if tree %}
+<ul class="tree-view">
+  {% for root in tree %}
+    {{ render_node(root) }}
+  {% endfor %}
+</ul>
+
+<script>
+(function () {
+  // Handle focus toggle
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.focus-toggle-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const btn = e.target.closest('.focus-toggle-btn');
+      const taskId = btn.dataset.taskId;
+
+      fetch(`/api/tasks/${taskId}/focus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(r => {
+        if (!r.ok) throw new Error('Toggle failed');
+        return r.json();
+      })
+      .then(task => {
+        // Update button UI
+        const icon = btn.querySelector('.focus-icon');
+        icon.textContent = task.daily_focus ? '⭐' : '☆';
+        btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
+
+        // Update any focus indicator in the summary so the tree view stays in sync
+        const summaryEl = btn.closest('summary');
+        if (summaryEl) {
+          const focusIndicator = summaryEl.querySelector('.focus-indicator');
+          if (focusIndicator) {
+            if (task.daily_focus) {
+              focusIndicator.textContent = '⭐';
+              focusIndicator.style.display = '';
+            } else {
+              focusIndicator.textContent = '';
+              focusIndicator.style.display = 'none';
+            }
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Failed to toggle focus:', err);
+        alert('Failed to toggle daily focus. Please try again.');
+      });
+    }
+  });
+
+  // Handle complete
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.complete-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const btn = e.target.closest('.complete-btn');
+      const taskId = btn.dataset.taskId;
+
+      fetch(`/api/tasks/${taskId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(r => {
+        if (!r.ok) throw new Error('Complete failed');
+        return r.json();
+      })
+      .then(task => {
+        // Reload page to show updated status
+        window.location.reload();
+      })
+      .catch(err => {
+        console.error('Failed to complete task:', err);
+        alert('Failed to complete task. Please try again.');
+      });
+    }
+  });
+})();
+</script>
+{% else %}
+<p>No tasks yet. <a href="/">Add one</a> to get started!</p>
+{% endif %}
+{% endblock %}

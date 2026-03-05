@@ -22,10 +22,14 @@ async def check_stale_tasks() -> None:
         for task in stale:
             logger.info("Auto-breakdown: processing task %d '%s'", task.id, task.title)
             try:
-                steps = await BreakdownService.breakdown_task(task)
+                steps = await BreakdownService.breakdown_task(
+                    task, debug=settings.debug
+                )
                 task_service.update_breakdown(task.id, steps)
                 task_service.create_child_tasks(task, steps, settings.max_level)
-                logger.info("Auto-breakdown: task %d done, %d steps", task.id, len(steps))
+                logger.info(
+                    "Auto-breakdown: task %d done, %d steps", task.id, len(steps)
+                )
             except (ValueError, Exception) as exc:  # noqa: BLE001
                 if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                     raise
@@ -44,7 +48,8 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     logger.info(
-        "Scheduler started: check_stale_tasks every %d hour(s)", settings.check_interval_hours
+        "Scheduler started: check_stale_tasks every %d hour(s)",
+        settings.check_interval_hours,
     )
 
 

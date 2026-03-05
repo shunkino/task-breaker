@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Daily Focus{% endblock %}
+{% block content %}
+<h2>⭐ Daily Focus</h2>
+<p>Tasks you have marked as daily focus items. Drag rows to reorder.</p>
+
+{% if tasks %}
+<table id="focus-table">
+  <thead>
+    <tr>
+      <th style="width:2rem"></th>
+      <th>#</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Due Date</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="focus-tbody">
+    {% for task in tasks %}
+    <tr draggable="true" data-id="{{ task.id }}" class="focus-row">
+      <td class="drag-handle" title="Drag to reorder" style="cursor:grab;user-select:none;text-align:center">⠿</td>
+      <td>{{ task.id }}</td>
+      <td>
+        <a href="/tasks/{{ task.id }}">{{ task.title }}</a>
+        {% if task.atomic %}<small> 🔒 atomic</small>{% endif %}
+      </td>
+      <td>
+        {% if task.status == "done" %}
+          <mark class="status-done">done</mark>
+        {% else %}
+          <mark class="status-open">open</mark>
+        {% endif %}
+      </td>
+      <td>
+        {% if task.due_date %}
+          {{ task.due_date.date().isoformat() }}
+        {% else %}
+          <span style="color:#aaa">—</span>
+        {% endif %}
+      </td>
+      <td>
+        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn" title="Remove from daily focus">⭐ Unstar</button>
+        </form>
+        {% if task.status == "open" %}
+        <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
+          <button type="submit" class="outline secondary small-btn">✓ Complete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<style>
+  .focus-row { transition: opacity 0.15s; }
+  .focus-row.drag-over { border-top: 2px solid var(--pico-primary); }
+  .focus-row.dragging { opacity: 0.4; }
+</style>
+
+<script>
+(function () {
+  const tbody = document.getElementById('focus-tbody');
+  let dragged = null;
+
+  tbody.addEventListener('dragstart', (e) => {
+    dragged = e.target.closest('tr');
+    if (!dragged) return;
+    dragged.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  tbody.addEventListener('dragend', () => {
+    if (dragged) dragged.classList.remove('dragging');
+    tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
+    dragged = null;
+  });
+
+  tbody.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('tr.focus-row');
+    tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
+    if (target && target !== dragged) target.classList.add('drag-over');
+  });
+
+  tbody.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('tr.focus-row');
+    if (!target || target === dragged) return;
+    tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
+
+    // Determine insert position: drop above or below the target row
+    const rect = target.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      tbody.insertBefore(dragged, target);
+    } else {
+      target.after(dragged);
+    }
+
+    // Persist the new order
+    const orderedIds = Array.from(tbody.querySelectorAll('tr.focus-row'))
+      .map(r => parseInt(r.dataset.id, 10));
+    fetch('/api/tasks/focus/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    }).then(r => {
+      if (!r.ok) {
+        console.error('Reorder failed:', r.status);
+        const notice = document.createElement('small');
+        notice.textContent = '⚠ Could not save order. Reload to retry.';
+        notice.style.color = 'var(--pico-color-red-500)';
+        notice.id = 'reorder-error';
+        const existing = document.getElementById('reorder-error');
+        if (existing) existing.remove();
+        document.querySelector('#focus-table').before(notice);
+      }
+    }).catch(() => {
+      console.error('Reorder network error');
+    });
+  });
+})();
+</script>
+{% else %}
+<p>No daily focus tasks yet. Star a task from the <a href="/">task list</a> to add it here.</p>
+{% endif %}
+{% endblock %}

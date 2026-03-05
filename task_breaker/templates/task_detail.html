@@ -22,8 +22,30 @@
       {% if task.parent_id and parent %}
         &nbsp;·&nbsp; Parent: <a href="/tasks/{{ parent.id }}">#{{ parent.id }} {{ parent.title }}</a>
       {% endif %}
+      &nbsp;
+      <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+        <button type="submit" class="outline secondary small-btn" title="Toggle daily focus">
+          {% if task.daily_focus %}⭐ In Daily Focus{% else %}☆ Add to Daily Focus{% endif %}
+        </button>
+      </form>
     </div>
   </header>
+
+  <section>
+    <h4>Due Date</h4>
+    <form action="/tasks/{{ task.id }}/due" method="post" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <input type="date" name="due_date" id="due_date_input_{{ task.id }}"
+             value="{{ task.due_date.date().isoformat() if task.due_date else '' }}" />
+      <button type="submit" class="outline small-btn">Set due date</button>
+      {% if task.due_date %}
+      <button type="submit" class="outline contrast small-btn"
+              onclick="document.getElementById('due_date_input_{{ task.id }}').value=''">Clear</button>
+      {% endif %}
+    </form>
+    {% if task.due_date %}
+      <small>Current due date: {{ task.due_date.date().isoformat() }}</small>
+    {% endif %}
+  </section>
 
   {% if task.children_ids %}
   <section>
