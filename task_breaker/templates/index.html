@@ -80,11 +80,12 @@
         {% endif %}
       </td>
       <td>
-        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
-          <button type="submit" class="outline secondary small-btn" title="Toggle daily focus">
-            {% if task.daily_focus %}⭐{% else %}☆{% endif %}
-          </button>
-        </form>
+        <button type="button" class="outline secondary small-btn focus-toggle-btn"
+                data-task-id="{{ task.id }}"
+                data-is-focus="{{ 'true' if task.daily_focus else 'false' }}"
+                title="Toggle daily focus">
+          <span class="focus-icon">{% if task.daily_focus %}⭐{% else %}☆{% endif %}</span>
+        </button>
         {% if task.status == "open" %}
         <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">✓ Complete</button>
@@ -99,6 +100,39 @@
     {% endfor %}
   </tbody>
 </table>
+
+<script>
+(function () {
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.focus-toggle-btn')) {
+      e.preventDefault();
+      const btn = e.target.closest('.focus-toggle-btn');
+      const taskId = btn.dataset.taskId;
+      const isFocus = btn.dataset.isFocus === 'true';
+
+      // Toggle via API
+      fetch(`/api/tasks/${taskId}/focus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(r => {
+        if (!r.ok) throw new Error('Toggle failed');
+        return r.json();
+      })
+      .then(task => {
+        // Update button UI
+        const icon = btn.querySelector('.focus-icon');
+        icon.textContent = task.daily_focus ? '⭐' : '☆';
+        btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
+      })
+      .catch(err => {
+        console.error('Failed to toggle focus:', err);
+        alert('Failed to toggle daily focus. Please try again.');
+      });
+    }
+  });
+})();
+</script>
 {% else %}
 <p>No tasks yet. Add one above!</p>
 {% endif %}
