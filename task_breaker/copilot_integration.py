@@ -219,6 +219,7 @@ async def breakdown_task(
     usage_logger: Any = None,
     source_command: Optional[str] = None,
     debug: bool = False,
+    max_tasks: Optional[int] = None,
 ) -> List[str]:
     client_opts: Dict[str, Any] = {}
     if debug:
@@ -242,19 +243,31 @@ async def breakdown_task(
                 },
             )
 
+    # Build system message with optional max_tasks constraint
+    system_message_content = (
+        "You are a task manager that breaks down tasks."
+        " Follow these rules:"
+        " (a) If the task is vague, break it into smaller steps."
+        " (b) If it is unclear how to achieve the goal, investigate context using WorkIQ."
+        " (c) If the task is to implement something or a small dashboard would help,"
+        " propose a small implementation project as steps."
+    )
+
+    if max_tasks is not None and max_tasks > 0:
+        system_message_content += (
+            f" (d) Create AT MOST {max_tasks} tasks in your breakdown."
+            f" Prioritize the most important {max_tasks} steps."
+        )
+
+    system_message_content += (
+        " Return the breakdown as a JSON array of short step strings."
+        " If you used WorkIQ, mention that in a final step like 'Review WorkIQ findings'."
+    )
+
     session_config: Dict[str, Any] = {
         "model": model,
         "system_message": {
-            "content": (
-                "You are a task manager that breaks down tasks."
-                " Follow these rules:"
-                " (a) If the task is vague, break it into smaller steps."
-                " (b) If it is unclear how to achieve the goal, investigate context using WorkIQ."
-                " (c) If the task is to implement something or a small dashboard would help,"
-                " propose a small implementation project as steps."
-                " Return the breakdown as a JSON array of short step strings."
-                " If you used WorkIQ, mention that in a final step like 'Review WorkIQ findings'."
-            )
+            "content": system_message_content
         },
     }
 
@@ -425,7 +438,15 @@ async def breakdown_task(
         steps = [content.strip()]
     if not isinstance(steps, list):
         steps = [str(steps)]
-    return [str(step).strip() for step in steps if str(step).strip()]
+
+    # Filter and clean steps
+    steps = [str(step).strip() for step in steps if str(step).strip()]
+
+    # Apply max_tasks limit if specified (safety truncation)
+    if max_tasks is not None and max_tasks > 0 and len(steps) > max_tasks:
+        steps = steps[:max_tasks]
+
+    return steps
 
 
 def _make_permission_handler(project_dir: str):

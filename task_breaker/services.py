@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings as app_settings
 from .copilot_integration import breakdown_task as _breakdown_task
+from .max_tasks_formula import evaluate_max_tasks_formula
 from .models import TaskORM
 
 _SORT_FIELDS = {
@@ -233,6 +234,12 @@ class BreakdownService:
         _workiq_args = (
             workiq_args if workiq_args is not None else app_settings.workiq_args
         )
+
+        # Evaluate max_tasks_per_level formula for this task's level
+        max_tasks = evaluate_max_tasks_formula(
+            app_settings.max_tasks_per_level, task.level or 0
+        )
+
         return await _breakdown_task(
             title=task.title,
             model=model,
@@ -240,4 +247,5 @@ class BreakdownService:
             workiq_command=workiq_command,
             workiq_args=_workiq_args,
             debug=debug,
+            max_tasks=max_tasks,
         )

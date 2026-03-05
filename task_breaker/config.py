@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     max_level: int = 3
+    max_tasks_per_level: str = "5-L"
     debug: bool = False
 
     @property
