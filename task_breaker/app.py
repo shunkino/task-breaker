@@ -290,7 +290,10 @@ def web_set_due_date(
                 _date.fromisoformat(due_date), datetime.min.time(), tzinfo=timezone.utc
             )
         except ValueError:
-            pass
+            # Preserve existing due date on invalid input to avoid data loss.
+            return RedirectResponse(
+                url=f"/tasks/{task_id}?error=invalid_due_date", status_code=303
+            )
     svc.set_due_date(task_id, parsed_due)
     return RedirectResponse(url=f"/tasks/{task_id}", status_code=303)
 

@@ -35,7 +35,6 @@ class TaskService:
     def get_task_tree(self) -> List[dict]:
         """Return all tasks organized as a hierarchical tree structure."""
         tasks = self.db.query(TaskORM).order_by(TaskORM.created_at).all()
-        task_map = {t.id: t for t in tasks}
         children_map: dict[Optional[int], list] = {}
         for t in tasks:
             children_map.setdefault(t.parent_id, []).append(t)

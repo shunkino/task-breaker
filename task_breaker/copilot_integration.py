@@ -151,6 +151,13 @@ def resolve_copilot_cli_path(debug: bool = False) -> Optional[str]:
                 f"[DEBUG] resolve_copilot_cli_path: COPILOT_CLI_PATH is set to '{env_path}'",
                 file=sys.stderr,
             )
+        if os.path.isfile(env_path):
+            return env_path
+        if debug:
+            print(
+                "[DEBUG] resolve_copilot_cli_path: COPILOT_CLI_PATH does not point to a file, falling back to auto-detection",
+                file=sys.stderr,
+            )
         return None
     found = shutil.which("copilot")
     if debug:
@@ -268,17 +275,73 @@ async def breakdown_task(
         }
 
         def _workiq_permission_handler(request: dict, context: dict) -> dict:
-            """Auto-approve WorkIQ MCP tool calls; user opted in by enabling WorkIQ."""
+            """
+            Handle WorkIQ MCP permission requests.
+
+            By default, ask the user for confirmation before approving a request.
+            To restore legacy auto-approval behavior, set the environment variable
+            TASK_BREAKER_AUTO_APPROVE_WORKIQ=1.
+            """
             kind = request.get("kind", "unknown")
             if debug:
                 print(
                     f"[DEBUG] permission_request: kind={kind!r} request={request}",
                     file=sys.stderr,
                 )
-            decision = {"kind": "approved"}
+
+            # Explicit opt-in to auto-approve via environment variable.
+            if os.environ.get("TASK_BREAKER_AUTO_APPROVE_WORKIQ") == "1":
+                decision = {"kind": "approved"}
+                if debug:
+                    print(
+                        "[DEBUG] permission_request: auto-approved via "
+                        "TASK_BREAKER_AUTO_APPROVE_WORKIQ",
+                        file=sys.stderr,
+                    )
+                return decision
+
+            # If interactive, prompt the user for a decision.
+            if sys.stdin is not None and sys.stdin.isatty():
+                tool_name = request.get("tool", {}).get("name") if isinstance(request.get("tool"), dict) else request.get("tool")
+                server_name = request.get("server_name") or request.get("server")
+                summary_parts = [f"kind={kind!r}"]
+                if server_name:
+                    summary_parts.append(f"server={server_name!r}")
+                if tool_name:
+                    summary_parts.append(f"tool={tool_name!r}")
+                summary = ", ".join(summary_parts)
+
+                print(
+                    f"[WorkIQ] Permission request: {summary}",
+                    file=sys.stderr,
+                )
+                print(
+                    "[WorkIQ] Approve this request? [y/N]: ",
+                    end="",
+                    file=sys.stderr,
+                )
+                try:
+                    answer = input().strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = ""
+
+                if answer.startswith("y"):
+                    decision = {"kind": "approved"}
+                else:
+                    decision = {"kind": "denied"}
+
+                if debug:
+                    print(
+                        f"[DEBUG] permission_request: user_decision={decision['kind']}",
+                        file=sys.stderr,
+                    )
+                return decision
+
+            # Non-interactive environment: deny by default.
+            decision = {"kind": "denied"}
             if debug:
                 print(
-                    f"[DEBUG] permission_request: auto-approved (kind={kind!r})",
+                    "[DEBUG] permission_request: denied (non-interactive environment)",
                     file=sys.stderr,
                 )
             return decision

@@ -1050,11 +1050,16 @@ def cmd_note(args: argparse.Namespace) -> None:
 def cmd_due(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task = find_task(tasks, args.id)
-    task.due_date = args.date
+    # Treat empty or whitespace-only input as "clear due date"
+    if args.date is None or args.date.strip() == "":
+        new_due_date = None
+    else:
+        new_due_date = args.date
+    task.due_date = new_due_date
     task.updated_at = now_iso()
     save_tasks(args.storage, tasks)
     args.usage_logger.emit(
-        "command", {"name": "due", "task_id": args.id, "date": args.date}
+        "command", {"name": "due", "task_id": args.id, "date": new_due_date}
     )
     print(render_task(task))
 

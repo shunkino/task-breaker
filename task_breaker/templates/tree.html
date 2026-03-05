@@ -74,6 +74,21 @@
         const icon = btn.querySelector('.focus-icon');
         icon.textContent = task.daily_focus ? '⭐' : '☆';
         btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
+
+        // Update any focus indicator in the summary so the tree view stays in sync
+        const summaryEl = btn.closest('summary');
+        if (summaryEl) {
+          const focusIndicator = summaryEl.querySelector('.focus-indicator');
+          if (focusIndicator) {
+            if (task.daily_focus) {
+              focusIndicator.textContent = '⭐';
+              focusIndicator.style.display = '';
+            } else {
+              focusIndicator.textContent = '';
+              focusIndicator.style.display = 'none';
+            }
+          }
+        }
       })
       .catch(err => {
         console.error('Failed to toggle focus:', err);
