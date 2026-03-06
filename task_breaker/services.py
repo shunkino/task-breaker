@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy import asc, case, desc
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings as app_settings
 from .copilot_integration import breakdown_task as _breakdown_task
+from .copilot_integration import get_workiq_context as _get_workiq_context
 from .max_tasks_formula import evaluate_max_tasks_formula
 from .models import TaskORM
 
@@ -222,7 +223,13 @@ class BreakdownService:
         workiq_args: Optional[List[str]] = None,
         debug: bool = False,
         max_tasks_per_level: Optional[str] = None,
-    ) -> List[str]:
+    ) -> Tuple[List[str], Optional[str]]:
+        """Break down a task into steps and optionally return AI-generated context.
+
+        Returns:
+            A tuple of (steps, context) where context is a brief summary from
+            WorkIQ or None when WorkIQ is not used.
+        """
         if task.atomic:
             raise ValueError(
                 f"Task {task.id} is atomic and cannot be broken down further."
@@ -254,4 +261,24 @@ class BreakdownService:
             workiq_args=_workiq_args,
             debug=debug,
             max_tasks=max_tasks,
+        )
+
+    @staticmethod
+    async def get_workiq_context(
+        title: str,
+        model: str = app_settings.model,
+        workiq_command: str = app_settings.workiq_command,
+        workiq_args: Optional[List[str]] = None,
+        debug: bool = False,
+    ) -> Optional[str]:
+        """Get a brief AI-generated context summary for a task via WorkIQ."""
+        _workiq_args = (
+            workiq_args if workiq_args is not None else app_settings.workiq_args
+        )
+        return await _get_workiq_context(
+            title=title,
+            model=model,
+            workiq_command=workiq_command,
+            workiq_args=_workiq_args,
+            debug=debug,
         )

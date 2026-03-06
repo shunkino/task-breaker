@@ -27,20 +27,21 @@
       </td>
       <td>
         {% if task.status == "done" %}
-          <mark class="status-done">done</mark>
+        <mark class="status-done">done</mark>
         {% else %}
-          <mark class="status-open">open</mark>
+        <mark class="status-open">open</mark>
         {% endif %}
       </td>
       <td>
         {% if task.due_date %}
-          {{ task.due_date.date().isoformat() }}
+        {{ task.due_date.date().isoformat() }}
         {% else %}
-          <span style="color:#aaa">—</span>
+        <span style="color:#aaa">—</span>
         {% endif %}
       </td>
       <td>
-        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline" class="unstar-form"
+          data-task-id="{{ task.id }}">
           <button type="submit" class="outline secondary small-btn" title="Remove from daily focus">⭐ Unstar</button>
         </form>
         {% if task.status == "open" %}
@@ -55,75 +56,113 @@
 </table>
 
 <style>
-  .focus-row { transition: opacity 0.15s; }
-  .focus-row.drag-over { border-top: 2px solid var(--pico-primary); }
-  .focus-row.dragging { opacity: 0.4; }
+  .focus-row {
+    transition: opacity 0.15s;
+  }
+
+  .focus-row.drag-over {
+    border-top: 2px solid var(--pico-primary);
+  }
+
+  .focus-row.dragging {
+    opacity: 0.4;
+  }
 </style>
 
 <script>
-(function () {
-  const tbody = document.getElementById('focus-tbody');
-  let dragged = null;
+  (function () {
+    const tbody = document.getElementById('focus-tbody');
+    let dragged = null;
 
-  tbody.addEventListener('dragstart', (e) => {
-    dragged = e.target.closest('tr');
-    if (!dragged) return;
-    dragged.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-  });
-
-  tbody.addEventListener('dragend', () => {
-    if (dragged) dragged.classList.remove('dragging');
-    tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
-    dragged = null;
-  });
-
-  tbody.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const target = e.target.closest('tr.focus-row');
-    tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
-    if (target && target !== dragged) target.classList.add('drag-over');
-  });
-
-  tbody.addEventListener('drop', (e) => {
-    e.preventDefault();
-    const target = e.target.closest('tr.focus-row');
-    if (!target || target === dragged) return;
-    tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
-
-    // Determine insert position: drop above or below the target row
-    const rect = target.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    if (e.clientY < midY) {
-      tbody.insertBefore(dragged, target);
-    } else {
-      target.after(dragged);
-    }
-
-    // Persist the new order
-    const orderedIds = Array.from(tbody.querySelectorAll('tr.focus-row'))
-      .map(r => parseInt(r.dataset.id, 10));
-    fetch('/api/tasks/focus/reorder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ordered_ids: orderedIds }),
-    }).then(r => {
-      if (!r.ok) {
-        console.error('Reorder failed:', r.status);
-        const notice = document.createElement('small');
-        notice.textContent = '⚠ Could not save order. Reload to retry.';
-        notice.style.color = 'var(--pico-color-red-500)';
-        notice.id = 'reorder-error';
-        const existing = document.getElementById('reorder-error');
-        if (existing) existing.remove();
-        document.querySelector('#focus-table').before(notice);
-      }
-    }).catch(() => {
-      console.error('Reorder network error');
+    tbody.addEventListener('dragstart', (e) => {
+      dragged = e.target.closest('tr');
+      if (!dragged) return;
+      dragged.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
     });
-  });
-})();
+
+    tbody.addEventListener('dragend', () => {
+      if (dragged) dragged.classList.remove('dragging');
+      tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
+      dragged = null;
+    });
+
+    tbody.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const target = e.target.closest('tr.focus-row');
+      tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
+      if (target && target !== dragged) target.classList.add('drag-over');
+    });
+
+    tbody.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const target = e.target.closest('tr.focus-row');
+      if (!target || target === dragged) return;
+      tbody.querySelectorAll('.focus-row').forEach(r => r.classList.remove('drag-over'));
+
+      // Determine insert position: drop above or below the target row
+      const rect = target.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        tbody.insertBefore(dragged, target);
+      } else {
+        target.after(dragged);
+      }
+
+      // Persist the new order
+      const orderedIds = Array.from(tbody.querySelectorAll('tr.focus-row'))
+        .map(r => parseInt(r.dataset.id, 10));
+      fetch('/api/tasks/focus/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ordered_ids: orderedIds }),
+      }).then(r => {
+        if (!r.ok) {
+          console.error('Reorder failed:', r.status);
+          const notice = document.createElement('small');
+          notice.textContent = '⚠ Could not save order. Reload to retry.';
+          notice.style.color = 'var(--pico-color-red-500)';
+          notice.id = 'reorder-error';
+          const existing = document.getElementById('reorder-error');
+          if (existing) existing.remove();
+          document.querySelector('#focus-table').before(notice);
+        }
+      }).catch(() => {
+        console.error('Reorder network error');
+      });
+    });
+
+    // Unstar: toggle focus via API and remove the row
+    document.addEventListener('submit', function (e) {
+      const form = e.target.closest('.unstar-form');
+      if (!form) return;
+      e.preventDefault();
+      const taskId = form.dataset.taskId;
+      fetch(`/api/tasks/${taskId}/focus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('Toggle failed');
+          return r.json();
+        })
+        .then(task => {
+          if (!task.daily_focus) {
+            const row = form.closest('tr.focus-row');
+            if (row) row.remove();
+            if (!tbody.querySelector('tr.focus-row')) {
+              document.getElementById('focus-table').outerHTML =
+                '<p>No daily focus tasks yet. Star a task from the <a href="/">task list</a> to add it here.</p>';
+            }
+          }
+        })
+        .catch(err => {
+          console.error('Failed to unstar:', err);
+          alert('Failed to remove from daily focus. Please try again.');
+        });
+    });
+  })();
 </script>
 {% else %}
 <p>No daily focus tasks yet. Star a task from the <a href="/">task list</a> to add it here.</p>
