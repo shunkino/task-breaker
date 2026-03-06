@@ -222,6 +222,7 @@ class BreakdownService:
         workiq_command: str = app_settings.workiq_command,
         workiq_args: Optional[List[str]] = None,
         debug: bool = False,
+        max_tasks_per_level: Optional[str] = None,
     ) -> Tuple[List[str], Optional[str]]:
         """Break down a task into steps and optionally return AI-generated context.
 
@@ -242,10 +243,15 @@ class BreakdownService:
             workiq_args if workiq_args is not None else app_settings.workiq_args
         )
 
-        # Evaluate max_tasks_per_level formula for this task's level
-        max_tasks = evaluate_max_tasks_formula(
-            app_settings.max_tasks_per_level, task.level or 0
+        # Use provided max_tasks_per_level or fall back to app settings
+        _max_tasks_per_level = (
+            max_tasks_per_level
+            if max_tasks_per_level is not None
+            else app_settings.max_tasks_per_level
         )
+
+        # Evaluate max_tasks_per_level formula for this task's level
+        max_tasks = evaluate_max_tasks_formula(_max_tasks_per_level, task.level or 0)
 
         return await _breakdown_task(
             title=task.title,

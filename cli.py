@@ -132,6 +132,11 @@ def add_task(
     due: Optional[str] = typer.Option(
         None, "--due", help="Due date in YYYY-MM-DD format"
     ),
+    max_tasks_per_level: Optional[str] = typer.Option(
+        None,
+        "--max-tasks-per-level",
+        help="Max tasks per level (formula like '5-L' where L is level, or 'auto' for LLM-decided)",
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Add a new task."""
@@ -149,7 +154,10 @@ def add_task(
             typer.echo(f"  due: {task['due_date']}")
         if breakdown:
             typer.echo("Triggering AI breakdown (this may take a while)…")
-            resp2 = client.post(f"/api/tasks/{task_id}/breakdown")
+            breakdown_body = {}
+            if max_tasks_per_level:
+                breakdown_body["max_tasks_per_level"] = max_tasks_per_level
+            resp2 = client.post(f"/api/tasks/{task_id}/breakdown", json=breakdown_body)
             resp2.raise_for_status()
             task = resp2.json()
             for step in task.get("breakdown", []):
@@ -193,13 +201,21 @@ def show_task(
 @app.command("breakdown")
 def breakdown_task(
     task_id: int = typer.Argument(..., help="Task ID"),
+    max_tasks_per_level: Optional[str] = typer.Option(
+        None,
+        "--max-tasks-per-level",
+        help="Max tasks per level (formula like '5-L' where L is level, or 'auto' for LLM-decided)",
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Trigger AI breakdown for a task."""
     _require_server(url)
     typer.echo("Running AI breakdown (this may take several minutes)…")
     with _client(url) as client:
-        resp = client.post(f"/api/tasks/{task_id}/breakdown")
+        body = {}
+        if max_tasks_per_level:
+            body["max_tasks_per_level"] = max_tasks_per_level
+        resp = client.post(f"/api/tasks/{task_id}/breakdown", json=body)
         resp.raise_for_status()
     task = resp.json()
     typer.echo(f"Breakdown for task #{task_id}:")

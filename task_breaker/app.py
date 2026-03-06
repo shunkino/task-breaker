@@ -182,6 +182,7 @@ async def api_breakdown_task(
     opts = body or {}
     model = opts.get("model", settings.model)
     use_workiq = not opts.get("no_workiq", False)
+    max_tasks_per_level = opts.get("max_tasks_per_level")
     if use_workiq and not is_workiq_eula_accepted(settings.workiq_eula_path):
         raise HTTPException(
             status_code=428,
@@ -190,8 +191,12 @@ async def api_breakdown_task(
                 "Please accept the EULA in Settings before using WorkIQ features."
             ),
         )
-    steps, context = await BreakdownService.breakdown_task(
-        task, model=model, use_workiq=use_workiq, debug=settings.debug
+    steps = await BreakdownService.breakdown_task(
+        task,
+        model=model,
+        use_workiq=use_workiq,
+        debug=settings.debug,
+        max_tasks_per_level=max_tasks_per_level,
     )
     task = svc.update_breakdown(task_id, steps)
     # Preserve AI context from breakdown as a note (skip if one already exists)
@@ -219,6 +224,7 @@ def api_get_settings():
         "check_interval_hours": settings.check_interval_hours,
         "model": settings.model,
         "max_level": settings.max_level,
+        "max_tasks_per_level": settings.max_tasks_per_level,
         "workiq_eula_accepted": is_workiq_eula_accepted(settings.workiq_eula_path),
         "workiq_eula_url": WORKIQ_EULA_URL,
     }
@@ -477,6 +483,7 @@ def web_update_settings(
     auto_breakdown_enabled: Optional[str] = Form(None),
     auto_breakdown_threshold_days: int = Form(...),
     check_interval_hours: int = Form(...),
+    max_tasks_per_level: str = Form(...),
 ):
     object.__setattr__(
         settings, "auto_breakdown_enabled", auto_breakdown_enabled == "on"
@@ -485,6 +492,7 @@ def web_update_settings(
         settings, "auto_breakdown_threshold_days", auto_breakdown_threshold_days
     )
     object.__setattr__(settings, "check_interval_hours", check_interval_hours)
+    object.__setattr__(settings, "max_tasks_per_level", max_tasks_per_level.strip())
     return RedirectResponse(url="/settings", status_code=303)
 
 
