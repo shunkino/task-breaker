@@ -9,6 +9,11 @@
   color: #fff;
 }
 
+.status-archived {
+  background-color: var(--pico-color-grey-500, #6b7280);
+  color: #fff;
+}
+
 .small-btn {
   padding: 0.2rem 0.6rem;
   font-size: 0.85rem;

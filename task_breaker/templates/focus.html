@@ -28,6 +28,8 @@
       <td>
         {% if task.status == "done" %}
         <mark class="status-done">done</mark>
+        {% elif task.status == "archived" %}
+        <mark class="status-archived">archived</mark>
         {% else %}
         <mark class="status-open">open</mark>
         {% endif %}

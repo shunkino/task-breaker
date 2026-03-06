@@ -1219,13 +1219,38 @@ def cmd_show(args: argparse.Namespace) -> None:
     print(render_task(task))
 
 
+def _set_descendants_status(tasks: List[Task], parent: Task, status: str) -> None:
+    """Recursively set status on all descendants of *parent*."""
+    timestamp = now_iso()
+    for cid in parent.children_ids or []:
+        child = next((t for t in tasks if t.id == cid), None)
+        if child:
+            child.status = status
+            child.updated_at = timestamp
+            _set_descendants_status(tasks, child, status)
+
+
 def cmd_complete(args: argparse.Namespace) -> None:
     tasks = load_tasks(args.storage)
     task = find_task(tasks, args.id)
     task.status = "done"
     task.updated_at = now_iso()
+    if getattr(args, "include_children", False):
+        _set_descendants_status(tasks, task, "done")
     save_tasks(args.storage, tasks)
     args.usage_logger.emit("command", {"name": "complete", "task_id": args.id})
+    print(render_task(task))
+
+
+def cmd_archive(args: argparse.Namespace) -> None:
+    tasks = load_tasks(args.storage)
+    task = find_task(tasks, args.id)
+    task.status = "archived"
+    task.updated_at = now_iso()
+    if getattr(args, "include_children", False):
+        _set_descendants_status(tasks, task, "archived")
+    save_tasks(args.storage, tasks)
+    args.usage_logger.emit("command", {"name": "archive", "task_id": args.id})
     print(render_task(task))
 
 
@@ -1491,7 +1516,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     complete_parser = subparsers.add_parser("complete", help="Mark task as done")
     complete_parser.add_argument("id", type=int, help="Task id")
+    complete_parser.add_argument(
+        "--include-children",
+        action="store_true",
+        help="Also mark all child tasks as done",
+    )
     complete_parser.set_defaults(func=cmd_complete)
+
+    archive_parser = subparsers.add_parser(
+        "archive", help="Archive a task that is no longer relevant"
+    )
+    archive_parser.add_argument("id", type=int, help="Task id")
+    archive_parser.add_argument(
+        "--include-children",
+        action="store_true",
+        help="Also archive all child tasks",
+    )
+    archive_parser.set_defaults(func=cmd_archive)
 
     note_parser = subparsers.add_parser("note", help="Add/replace task note")
     note_parser.add_argument("id", type=int, help="Task id")
