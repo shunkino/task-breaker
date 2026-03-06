@@ -29,6 +29,7 @@ def _migrate_db(engine):
             ("due_date", "ALTER TABLE tasks ADD COLUMN due_date DATETIME"),
             ("daily_focus", "ALTER TABLE tasks ADD COLUMN daily_focus BOOLEAN DEFAULT 0 NOT NULL"),
             ("focus_order", "ALTER TABLE tasks ADD COLUMN focus_order INTEGER"),
+            ("ai_context_pending", "ALTER TABLE tasks ADD COLUMN ai_context_pending BOOLEAN DEFAULT 0 NOT NULL"),
         ]
         for col_name, ddl in migrations:
             if col_name not in existing_columns:

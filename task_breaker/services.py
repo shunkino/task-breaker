@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy import asc, case, desc
 from sqlalchemy.orm import Session
 
 from .config import settings as app_settings
+from .copilot_integration import AI_CONTEXT_MARKER
 from .copilot_integration import breakdown_task as _breakdown_task
 from .copilot_integration import get_workiq_context as _get_workiq_context
 from .max_tasks_formula import evaluate_max_tasks_formula
@@ -76,6 +77,7 @@ class TaskService:
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
             "due_date": task.due_date.date().isoformat() if task.due_date else None,
             "daily_focus": task.daily_focus,
+            "ai_context_pending": task.ai_context_pending,
             "children": [
                 TaskService._build_tree_node(c, children_map) for c in children
             ],
@@ -209,12 +211,26 @@ class TaskService:
         )
 
     def create_child_tasks(
-        self, parent: TaskORM, steps: List[str], max_level: int
+        self,
+        parent: TaskORM,
+        steps: List[str],
+        max_level: int,
+        step_contexts: Optional[Dict[str, str]] = None,
     ) -> List[int]:
-        """Create child TaskORM objects from breakdown steps and return their IDs."""
+        """Create child TaskORM objects from breakdown steps and return their IDs.
+
+        If *step_contexts* is provided (a mapping of step title → context
+        snippet), each child task whose title matches a key will have its
+        notes pre-populated with the AI context.
+        """
         child_level = (parent.level or 0) + 1
         children_ids: List[int] = []
         for step in steps:
+            notes = None
+            if step_contexts:
+                ctx = step_contexts.get(step)
+                if ctx:
+                    notes = f"{AI_CONTEXT_MARKER}{ctx}"
             child = TaskORM(
                 title=step,
                 status="open",
@@ -222,6 +238,7 @@ class TaskService:
                 level=child_level,
                 parent_id=parent.id,
                 atomic=child_level >= max_level,
+                notes=notes,
             )
             self.db.add(child)
             self.db.flush()  # get the auto-generated id
@@ -250,12 +267,13 @@ class BreakdownService:
         workiq_args: Optional[List[str]] = None,
         debug: bool = False,
         max_tasks_per_level: Optional[str] = None,
-    ) -> Tuple[List[str], Optional[str]]:
+    ) -> Tuple[List[str], Optional[str], Dict[str, str]]:
         """Break down a task into steps and optionally return AI-generated context.
 
         Returns:
-            A tuple of (steps, context) where context is a brief summary from
-            WorkIQ or None when WorkIQ is not used.
+            A tuple of (steps, context, step_contexts) where context is a
+            brief summary from WorkIQ (or None), and step_contexts maps
+            each step title to its relevant context snippet.
         """
         if task.atomic:
             raise ValueError(

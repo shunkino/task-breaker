@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Typer-based CLI client for Task Breaker server."""
+import logging
 import os
 import sys
 from typing import Optional
@@ -48,6 +49,10 @@ def serve(
     """Start the Task Breaker server."""
     if debug:
         os.environ["TASK_BREAKER_DEBUG"] = "true"
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
     uvicorn.run("task_breaker.app:app", host=host, port=port, reload=reload)
 
 

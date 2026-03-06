@@ -19,6 +19,7 @@ from .copilot_integration import (
     WORKIQ_EULA_URL,
 )
 from .database import get_db, init_db
+from .models import TaskORM
 from .scheduler import start_scheduler, stop_scheduler
 from .services import BreakdownService, TaskService
 
@@ -93,6 +94,9 @@ def api_create_task(
 
     # Queue background WorkIQ context gathering for the new task
     if is_workiq_eula_accepted(settings.workiq_eula_path):
+        task.ai_context_pending = True
+        db.commit()
+        db.refresh(task)
         background_tasks.add_task(_gather_task_context, task.id, title)
 
     return _task_to_dict(task)
@@ -122,6 +126,14 @@ def api_reorder_focus(body: Dict[str, Any], db: Session = Depends(get_db)):
 def api_get_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)
     return _task_to_dict(svc.get_task(task_id))
+
+
+@app.get("/api/tasks/{task_id}/ai-status")
+def api_task_ai_status(task_id: int, db: Session = Depends(get_db)):
+    """Lightweight poll endpoint: returns whether AI context gathering is in progress."""
+    svc = TaskService(db)
+    task = svc.get_task(task_id)
+    return {"id": task.id, "ai_context_pending": task.ai_context_pending}
 
 
 @app.post("/api/tasks/{task_id}/complete", response_model=Dict[str, Any])
@@ -209,7 +221,7 @@ async def api_breakdown_task(
                 "Please accept the EULA in Settings before using WorkIQ features."
             ),
         )
-    steps = await BreakdownService.breakdown_task(
+    steps, context, step_contexts = await BreakdownService.breakdown_task(
         task,
         model=model,
         use_workiq=use_workiq,
@@ -229,7 +241,7 @@ async def api_breakdown_task(
                 svc.add_note(task_id, new_notes)
         except Exception:
             _logger.debug("Failed to save context note for task %d", task_id, exc_info=True)
-    svc.create_child_tasks(task, steps, settings.max_level)
+    svc.create_child_tasks(task, steps, settings.max_level, step_contexts=step_contexts)
     db.refresh(task)
     return _task_to_dict(task)
 
@@ -388,6 +400,8 @@ def web_add_task(
 
     # Queue background WorkIQ context gathering for the new task
     if is_workiq_eula_accepted(settings.workiq_eula_path):
+        task.ai_context_pending = True
+        db.commit()
         background_tasks.add_task(_gather_task_context, task.id, title.strip())
 
     return RedirectResponse(url="/", status_code=303)
@@ -479,7 +493,7 @@ async def web_breakdown_task(
             _svc = TaskService(_db)
             _task = _svc.get_task(task_id)
             use_workiq = is_workiq_eula_accepted(settings.workiq_eula_path)
-            steps, context = await BreakdownService.breakdown_task(
+            steps, context, step_contexts = await BreakdownService.breakdown_task(
                 _task, use_workiq=use_workiq, debug=settings.debug
             )
             _task = _svc.update_breakdown(task_id, steps)
@@ -495,7 +509,7 @@ async def web_breakdown_task(
                         _svc.add_note(task_id, new_notes)
                 except Exception:
                     _logger.debug("Failed to save context note for task %d", task_id, exc_info=True)
-            _svc.create_child_tasks(_task, steps, settings.max_level)
+            _svc.create_child_tasks(_task, steps, settings.max_level, step_contexts=step_contexts)
         finally:
             try:
                 next(_db_gen)
@@ -564,27 +578,55 @@ _logger = logging.getLogger(__name__)
 async def _gather_task_context(task_id: int, title: str) -> None:
     """Background task to gather WorkIQ context for a newly created task."""
     try:
+        _logger.debug("_gather_task_context: starting for task_id=%d title=%r", task_id, title)
         context = await BreakdownService.get_workiq_context(
             title=title, debug=settings.debug
         )
-        if context:
-            db_gen = get_db()
-            db = next(db_gen)
-            try:
-                svc = TaskService(db)
+        _logger.debug(
+            "_gather_task_context: get_workiq_context returned %s for task_id=%d",
+            f"context ({len(context)} chars)" if context else "None",
+            task_id,
+        )
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            svc = TaskService(db)
+            task = svc.get_task(task_id)
+            if context:
                 # Preserve any existing notes (user may have edited since creation)
-                task = svc.get_task(task_id)
                 existing = task.notes or ""
                 ai_note = f"{AI_CONTEXT_MARKER}{context}"
                 combined = f"{existing}\n\n{ai_note}" if existing else ai_note
                 svc.add_note(task_id, combined)
+                _logger.debug("_gather_task_context: saved context note for task_id=%d", task_id)
+            else:
+                _logger.debug("_gather_task_context: no context to save for task_id=%d", task_id)
+            task.ai_context_pending = False
+            db.commit()
+            _logger.debug("_gather_task_context: cleared ai_context_pending for task_id=%d", task_id)
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass
+    except Exception:
+        _logger.error("_gather_task_context: failed for task_id=%d", task_id, exc_info=True)
+        # Best-effort: clear pending flag even on failure
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                task = db.query(TaskORM).filter_by(id=task_id).first()
+                if task:
+                    task.ai_context_pending = False
+                    db.commit()
             finally:
                 try:
                     next(db_gen)
                 except StopIteration:
                     pass
-    except Exception:
-        _logger.debug("Background context gathering failed for task %d", task_id, exc_info=True)
+        except Exception:
+            _logger.error("_gather_task_context: failed to clear pending flag for task_id=%d", task_id, exc_info=True)
 
 
 def _task_to_dict(task) -> Dict[str, Any]:
@@ -604,4 +646,5 @@ def _task_to_dict(task) -> Dict[str, Any]:
         "auto_breakdown_enabled": task.auto_breakdown_enabled,
         "due_date": task.due_date.date().isoformat() if task.due_date else None,
         "daily_focus": task.daily_focus,
+        "ai_context_pending": task.ai_context_pending,
     }

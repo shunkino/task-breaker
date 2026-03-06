@@ -28,6 +28,11 @@
           <a href="/tasks/{{ task.id }}" class="board-card-title">{{ task.title }}</a>
           {% if task.atomic %}<span class="board-card-badge">🔒</span>{% endif %}
         </div>
+        {% if task.ai_context_pending %}
+        <div class="board-card-meta ai-pending" data-ai-pending="{{ task.id }}">
+          <span class="ai-spinner"></span> <small>AI gathering context…</small>
+        </div>
+        {% endif %}
         {% if task.due_date %}
         <div class="board-card-meta">
           {% set due = task.due_date.date() %}
@@ -64,6 +69,11 @@
           <a href="/tasks/{{ task.id }}" class="board-card-title">{{ task.title }}</a>
           {% if task.atomic %}<span class="board-card-badge">🔒</span>{% endif %}
         </div>
+        {% if task.ai_context_pending %}
+        <div class="board-card-meta ai-pending" data-ai-pending="{{ task.id }}">
+          <span class="ai-spinner"></span> <small>AI gathering context…</small>
+        </div>
+        {% endif %}
         {% if task.due_date %}
         <div class="board-card-meta">
           {% set due = task.due_date.date() %}
@@ -269,6 +279,30 @@
       return;
     }
   });
+})();
+</script>
+<script>
+/* Poll for AI context completion and refresh when done */
+(function () {
+  var pendingEls = document.querySelectorAll('[data-ai-pending]');
+  if (!pendingEls.length) return;
+
+  var pendingIds = Array.from(pendingEls).map(function (el) { return el.dataset.aiPending; });
+
+  function pollStatus() {
+    Promise.all(pendingIds.map(function (id) {
+      return fetch('/api/tasks/' + id + '/ai-status')
+        .then(function (r) { return r.json(); })
+        .catch(function () { return null; });
+    })).then(function (results) {
+      var allDone = results.every(function (r) { return r && !r.ai_context_pending; });
+      if (allDone) {
+        window.location.reload();
+      }
+    });
+  }
+
+  setInterval(pollStatus, 5000);
 })();
 </script>
 {% endblock %}

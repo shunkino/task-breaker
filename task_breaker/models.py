@@ -30,3 +30,4 @@ class TaskORM(Base):
     due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     daily_focus: Mapped[bool] = mapped_column(Boolean, default=False)
     focus_order: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ai_context_pending: Mapped[bool] = mapped_column(Boolean, default=False)

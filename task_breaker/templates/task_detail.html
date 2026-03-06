@@ -33,6 +33,12 @@
     </div>
   </header>
 
+  {% if task.ai_context_pending %}
+  <div class="ai-pending-banner" data-ai-pending="{{ task.id }}">
+    <span class="ai-spinner"></span> AI is gathering context for this task…
+  </div>
+  {% endif %}
+
   <section>
     <h4>Due Date</h4>
     <form action="/tasks/{{ task.id }}/due" method="post"
@@ -139,4 +145,20 @@
     {% endif %}
   </footer>
 </article>
+{% if task.ai_context_pending %}
+<script>
+(function () {
+  var taskId = {{ task.id }};
+  function pollStatus() {
+    fetch('/api/tasks/' + taskId + '/ai-status')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.ai_context_pending) window.location.reload();
+      })
+      .catch(function () {});
+  }
+  setInterval(pollStatus, 5000);
+})();
+</script>
+{% endif %}
 {% endblock %}
