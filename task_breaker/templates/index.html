@@ -61,6 +61,8 @@
       <td>
         {% if task.status == "done" %}
         <mark class="status-done">done</mark>
+        {% elif task.status == "archived" %}
+        <mark class="status-archived">archived</mark>
         {% else %}
         <mark class="status-open">open</mark>
         {% endif %}
@@ -91,9 +93,15 @@
         <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">✓ Complete</button>
         </form>
-        {% else %}
+        {% endif %}
+        {% if task.status in ("done", "archived") %}
         <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">↩ Reopen</button>
+        </form>
+        {% endif %}
+        {% if task.status != "archived" %}
+        <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
+          <button type="submit" class="outline contrast small-btn">📦 Archive</button>
         </form>
         {% endif %}
         <form action="/tasks/{{ task.id }}/delete" method="post" style="display:inline"

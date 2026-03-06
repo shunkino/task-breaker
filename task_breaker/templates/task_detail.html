@@ -14,6 +14,8 @@
     <div>
       {% if task.status == "done" %}
       <mark class="status-done">done</mark>
+      {% elif task.status == "archived" %}
+      <mark class="status-archived">archived</mark>
       {% else %}
       <mark class="status-open">open</mark>
       {% endif %}
@@ -96,12 +98,43 @@
     {% if task.status == "open" %}
     &nbsp;
     <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
+      {% if task.children_ids %}
+      <label style="font-size:0.8rem;display:inline;margin-right:0.3rem">
+        <input type="checkbox" name="include_children" style="display:inline;width:auto;margin:0">
+        Include children
+      </label>
+      {% endif %}
       <button type="submit" class="secondary">✓ Mark complete</button>
+    </form>
+    &nbsp;
+    <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
+      {% if task.children_ids %}
+      <label style="font-size:0.8rem;display:inline;margin-right:0.3rem">
+        <input type="checkbox" name="include_children" style="display:inline;width:auto;margin:0">
+        Include children
+      </label>
+      {% endif %}
+      <button type="submit" class="contrast">📦 Archive</button>
+    </form>
+    {% elif task.status == "archived" %}
+    &nbsp;
+    <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
+      <button type="submit" class="secondary">↩ Reopen</button>
     </form>
     {% else %}
     &nbsp;
     <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
       <button type="submit" class="secondary">↩ Reopen</button>
+    </form>
+    &nbsp;
+    <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
+      {% if task.children_ids %}
+      <label style="font-size:0.8rem;display:inline;margin-right:0.3rem">
+        <input type="checkbox" name="include_children" style="display:inline;width:auto;margin:0">
+        Include children
+      </label>
+      {% endif %}
+      <button type="submit" class="contrast">📦 Archive</button>
     </form>
     {% endif %}
   </footer>

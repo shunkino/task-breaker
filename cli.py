@@ -76,7 +76,7 @@ def list_tasks(
         typer.echo("No tasks.")
         return
     for t in tasks:
-        status_str = "✓" if t["status"] == "done" else "○"
+        status_str = "✓" if t["status"] == "done" else ("📦" if t["status"] == "archived" else "○")
         atomic_str = " 🔒" if t.get("atomic") else ""
         focus_str = " ⭐" if t.get("daily_focus") else ""
         due_str = f"  due: {t['due_date']}" if t.get("due_date") else ""
@@ -88,7 +88,7 @@ def list_tasks(
 def _print_tree_node(node: dict, prefix: str = "", is_last: bool = True) -> None:
     """Recursively print a tree node with box-drawing characters."""
     connector = "└── " if is_last else "├── "
-    status_icon = "✓" if node["status"] == "done" else "○"
+    status_icon = "✓" if node["status"] == "done" else ("📦" if node["status"] == "archived" else "○")
     atomic_str = " 🔒" if node.get("atomic") else ""
     typer.echo(
         f"{prefix}{connector}[{node['id']}] {status_icon} {node['title']}{atomic_str}"
@@ -226,14 +226,23 @@ def breakdown_task(
 @app.command("complete")
 def complete_task(
     task_id: int = typer.Argument(..., help="Task ID"),
+    include_children: bool = typer.Option(
+        False, "--include-children", help="Also mark all child tasks as done"
+    ),
     url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
 ):
     """Mark a task as done."""
     _require_server(url)
+    body = {}
+    if include_children:
+        body["include_children"] = True
     with _client(url) as client:
-        resp = client.post(f"/api/tasks/{task_id}/complete")
+        resp = client.post(f"/api/tasks/{task_id}/complete", json=body)
         resp.raise_for_status()
-    typer.echo(f"Task #{task_id} marked as done.")
+    msg = f"Task #{task_id} marked as done."
+    if include_children:
+        msg += " (including children)"
+    typer.echo(msg)
 
 
 @app.command("note")
@@ -248,6 +257,28 @@ def add_note(
         resp = client.post(f"/api/tasks/{task_id}/note", json={"note": text})
         resp.raise_for_status()
     typer.echo(f"Note updated for task #{task_id}.")
+
+
+@app.command("archive")
+def archive_task(
+    task_id: int = typer.Argument(..., help="Task ID"),
+    include_children: bool = typer.Option(
+        False, "--include-children", help="Also archive all child tasks"
+    ),
+    url: str = typer.Option(_DEFAULT_BASE_URL, help="Server base URL"),
+):
+    """Archive a task that is no longer relevant."""
+    _require_server(url)
+    body = {}
+    if include_children:
+        body["include_children"] = True
+    with _client(url) as client:
+        resp = client.post(f"/api/tasks/{task_id}/archive", json=body)
+        resp.raise_for_status()
+    msg = f"Task #{task_id} archived."
+    if include_children:
+        msg += " (including children)"
+    typer.echo(msg)
 
 
 @app.command("delete")

@@ -125,15 +125,33 @@ def api_get_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/tasks/{task_id}/complete", response_model=Dict[str, Any])
-def api_complete_task(task_id: int, db: Session = Depends(get_db)):
+def api_complete_task(
+    task_id: int,
+    body: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    opts = body or {}
+    include_children = bool(opts.get("include_children", False))
     svc = TaskService(db)
-    return _task_to_dict(svc.complete_task(task_id))
+    return _task_to_dict(svc.complete_task(task_id, include_children=include_children))
 
 
 @app.post("/api/tasks/{task_id}/reopen", response_model=Dict[str, Any])
 def api_reopen_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)
     return _task_to_dict(svc.reopen_task(task_id))
+
+
+@app.post("/api/tasks/{task_id}/archive", response_model=Dict[str, Any])
+def api_archive_task(
+    task_id: int,
+    body: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    opts = body or {}
+    include_children = bool(opts.get("include_children", False))
+    svc = TaskService(db)
+    return _task_to_dict(svc.archive_task(task_id, include_children=include_children))
 
 
 @app.post("/api/tasks/{task_id}/note", response_model=Dict[str, Any])
@@ -367,9 +385,13 @@ def web_add_task(
 
 
 @app.post("/tasks/{task_id}/complete", response_class=HTMLResponse)
-def web_complete_task(task_id: int, db: Session = Depends(get_db)):
+def web_complete_task(
+    task_id: int,
+    include_children: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     svc = TaskService(db)
-    svc.complete_task(task_id)
+    svc.complete_task(task_id, include_children=include_children == "on")
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -377,6 +399,17 @@ def web_complete_task(task_id: int, db: Session = Depends(get_db)):
 def web_reopen_task(task_id: int, db: Session = Depends(get_db)):
     svc = TaskService(db)
     svc.reopen_task(task_id)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/tasks/{task_id}/archive", response_class=HTMLResponse)
+def web_archive_task(
+    task_id: int,
+    include_children: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    svc = TaskService(db)
+    svc.archive_task(task_id, include_children=include_children == "on")
     return RedirectResponse(url="/", status_code=303)
 
 

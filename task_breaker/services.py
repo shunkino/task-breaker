@@ -94,13 +94,40 @@ class TaskService:
         self.db.refresh(task)
         return task
 
-    def complete_task(self, task_id: int) -> TaskORM:
+    def complete_task(
+        self, task_id: int, include_children: bool = False
+    ) -> TaskORM:
         task = self.get_task(task_id)
         task.status = "done"
         task.updated_at = datetime.now(timezone.utc)
+        if include_children:
+            self._set_descendants_status(task, "done")
         self.db.commit()
         self.db.refresh(task)
         return task
+
+    def archive_task(
+        self, task_id: int, include_children: bool = False
+    ) -> TaskORM:
+        task = self.get_task(task_id)
+        task.status = "archived"
+        task.updated_at = datetime.now(timezone.utc)
+        if include_children:
+            self._set_descendants_status(task, "archived")
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def _set_descendants_status(self, task: TaskORM, status: str) -> None:
+        """Recursively set status on all descendants of *task*."""
+        now = datetime.now(timezone.utc)
+        children_ids = task.children_ids or []
+        for cid in children_ids:
+            child = self.db.query(TaskORM).filter(TaskORM.id == cid).first()
+            if child:
+                child.status = status
+                child.updated_at = now
+                self._set_descendants_status(child, status)
 
     def reopen_task(self, task_id: int) -> TaskORM:
         task = self.get_task(task_id)
