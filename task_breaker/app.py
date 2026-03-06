@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from datetime import date as _date, datetime, timezone
 from pathlib import Path
@@ -193,13 +194,18 @@ async def api_breakdown_task(
         task, model=model, use_workiq=use_workiq, debug=settings.debug
     )
     task = svc.update_breakdown(task_id, steps)
-    # Preserve AI context from breakdown as a note
+    # Preserve AI context from breakdown as a note (skip if one already exists)
     if context:
-        ai_note = f"{AI_CONTEXT_MARKER}{context}"
-        existing = task.notes or ""
-        new_notes = f"{existing}\n\n{ai_note}" if existing else ai_note
-        svc.add_note(task_id, new_notes)
-        db.refresh(task)
+        try:
+            # Re-read notes to get fresh state after potentially long breakdown
+            db.refresh(task)
+            if AI_CONTEXT_MARKER not in (task.notes or ""):
+                ai_note = f"{AI_CONTEXT_MARKER}{context}"
+                existing = task.notes or ""
+                new_notes = f"{existing}\n\n{ai_note}" if existing else ai_note
+                svc.add_note(task_id, new_notes)
+        except Exception:
+            _logger.debug("Failed to save context note for task %d", task_id, exc_info=True)
     svc.create_child_tasks(task, steps, settings.max_level)
     db.refresh(task)
     return _task_to_dict(task)
@@ -429,13 +435,18 @@ async def web_breakdown_task(
                 _task, use_workiq=use_workiq, debug=settings.debug
             )
             _task = _svc.update_breakdown(task_id, steps)
-            # Preserve AI context from breakdown as a note
+            # Preserve AI context from breakdown as a note (skip if one already exists)
             if context:
-                ai_note = f"{AI_CONTEXT_MARKER}{context}"
-                existing = _task.notes or ""
-                new_notes = f"{existing}\n\n{ai_note}" if existing else ai_note
-                _svc.add_note(task_id, new_notes)
-                _db.refresh(_task)
+                try:
+                    # Re-read notes to get fresh state after potentially long breakdown
+                    _db.refresh(_task)
+                    if AI_CONTEXT_MARKER not in (_task.notes or ""):
+                        ai_note = f"{AI_CONTEXT_MARKER}{context}"
+                        existing = _task.notes or ""
+                        new_notes = f"{existing}\n\n{ai_note}" if existing else ai_note
+                        _svc.add_note(task_id, new_notes)
+                except Exception:
+                    _logger.debug("Failed to save context note for task %d", task_id, exc_info=True)
             _svc.create_child_tasks(_task, steps, settings.max_level)
         finally:
             try:
@@ -497,6 +508,9 @@ async def web_accept_workiq_eula(request: Request):
 # ---------------------------------------------------------------------------
 
 
+_logger = logging.getLogger(__name__)
+
+
 async def _gather_task_context(task_id: int, title: str) -> None:
     """Background task to gather WorkIQ context for a newly created task."""
     try:
@@ -508,14 +522,19 @@ async def _gather_task_context(task_id: int, title: str) -> None:
             db = next(db_gen)
             try:
                 svc = TaskService(db)
-                svc.add_note(task_id, f"{AI_CONTEXT_MARKER}{context}")
+                # Preserve any existing notes (user may have edited since creation)
+                task = svc.get_task(task_id)
+                existing = task.notes or ""
+                ai_note = f"{AI_CONTEXT_MARKER}{context}"
+                combined = f"{existing}\n\n{ai_note}" if existing else ai_note
+                svc.add_note(task_id, combined)
             finally:
                 try:
                     next(db_gen)
                 except StopIteration:
                     pass
     except Exception:
-        pass  # Context gathering is best-effort
+        _logger.debug("Background context gathering failed for task %d", task_id, exc_info=True)
 
 
 def _task_to_dict(task) -> Dict[str, Any]:

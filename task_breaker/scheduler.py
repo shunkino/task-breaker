@@ -28,14 +28,17 @@ async def check_stale_tasks() -> None:
                     task, use_workiq=use_workiq, debug=settings.debug
                 )
                 task_service.update_breakdown(task.id, steps)
-                # Preserve AI context from breakdown as a note
+                # Preserve AI context from breakdown as a note (skip if one already exists)
                 if context:
-                    ai_note = f"{AI_CONTEXT_MARKER}{context}"
-                    existing = task.notes or ""
-                    new_notes = (
-                        f"{existing}\n\n{ai_note}" if existing else ai_note
-                    )
-                    task_service.add_note(task.id, new_notes)
+                    # Re-read task to get fresh notes (breakdown can take minutes)
+                    db.refresh(task)
+                    if AI_CONTEXT_MARKER not in (task.notes or ""):
+                        ai_note = f"{AI_CONTEXT_MARKER}{context}"
+                        existing = task.notes or ""
+                        new_notes = (
+                            f"{existing}\n\n{ai_note}" if existing else ai_note
+                        )
+                        task_service.add_note(task.id, new_notes)
                 task_service.create_child_tasks(task, steps, settings.max_level)
                 logger.info(
                     "Auto-breakdown: task %d done, %d steps", task.id, len(steps)

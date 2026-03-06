@@ -1095,7 +1095,7 @@ def cmd_add(args: argparse.Namespace) -> None:
         {
             "name": "add",
             "breakdown": args.breakdown,
-            "model": args.model if args.breakdown else None,
+            "model": args.model if (args.breakdown or use_workiq) else None,
             "workiq_enabled": use_workiq,
         },
     )
@@ -1332,8 +1332,8 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
     task.breakdown = steps
     timestamp = now_iso()
     task.updated_at = timestamp
-    # Preserve AI context from breakdown as a note
-    if context:
+    # Preserve AI context from breakdown as a note (skip if one already exists)
+    if context and AI_CONTEXT_MARKER not in (task.notes or ""):
         ai_note = f"{AI_CONTEXT_MARKER}{context}"
         if task.notes:
             task.notes = f"{task.notes}\n\n{ai_note}"
