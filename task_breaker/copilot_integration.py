@@ -435,7 +435,11 @@ async def breakdown_task(
         }
     )
 
-    # Request a brief context summary for the task (best-effort)
+    # Request a brief context summary for the task (best-effort).
+    # NOTE: We intentionally gather context here rather than calling
+    # get_workiq_context() because this session already holds the WorkIQ
+    # conversation history — reusing it produces a more accurate summary
+    # without the overhead of starting a new Copilot session.
     context = None
     if use_workiq:
         try:
