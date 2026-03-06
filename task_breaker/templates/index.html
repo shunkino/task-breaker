@@ -31,9 +31,9 @@
         {% if task.due_date %}
         <div class="board-card-meta">
           {% set due = task.due_date.date() %}
-          {% if task.status != "done" and due < today_date %}
+          {% if task.status != "done" and due < current_date %}
           <span class="board-card-due overdue">⚠️ {{ due.isoformat() }}</span>
-          {% elif task.status != "done" and (due - today_date).days <= 3 %}
+          {% elif task.status != "done" and (due - current_date).days <= 3 %}
           <span class="board-card-due soon">⏰ {{ due.isoformat() }}</span>
           {% else %}
           <span class="board-card-due">📅 {{ due.isoformat() }}</span>
@@ -55,10 +55,10 @@
   <div class="board-column column-today" data-column="today">
     <div class="board-column-header">
       <span class="board-column-title">⭐ Today</span>
-      <span class="board-column-count" id="count-today">{{ today|length }}</span>
+      <span class="board-column-count" id="count-today">{{ today_tasks|length }}</span>
     </div>
     <div class="board-column-body" data-drop="today">
-      {% for task in today %}
+      {% for task in today_tasks %}
       <div class="board-card {% if task.status == 'done' %}board-card-done{% endif %}" draggable="true" data-id="{{ task.id }}" data-status="{{ task.status }}" data-focus="true">
         <div class="board-card-header">
           <a href="/tasks/{{ task.id }}" class="board-card-title">{{ task.title }}</a>
@@ -67,9 +67,9 @@
         {% if task.due_date %}
         <div class="board-card-meta">
           {% set due = task.due_date.date() %}
-          {% if task.status != "done" and due < today_date %}
+          {% if task.status != "done" and due < current_date %}
           <span class="board-card-due overdue">⚠️ {{ due.isoformat() }}</span>
-          {% elif task.status != "done" and (due - today_date).days <= 3 %}
+          {% elif task.status != "done" and (due - current_date).days <= 3 %}
           <span class="board-card-due soon">⏰ {{ due.isoformat() }}</span>
           {% else %}
           <span class="board-card-due">📅 {{ due.isoformat() }}</span>
@@ -155,17 +155,17 @@
       col.classList.remove('board-column-drop-target');
       if (!draggedCard) return;
 
-      var taskId = draggedCard.dataset.id;
-      var targetColumn = col.dataset.drop;
-      var currentStatus = draggedCard.dataset.status;
-      var currentFocus = draggedCard.dataset.focus === 'true';
+      const taskId = draggedCard.dataset.id;
+      const targetColumn = col.dataset.drop;
+      const currentStatus = draggedCard.dataset.status;
+      const currentFocus = draggedCard.dataset.focus === 'true';
 
       handleDrop(taskId, targetColumn, currentStatus, currentFocus, draggedCard, col);
     });
   });
 
   function handleDrop(taskId, targetColumn, currentStatus, currentFocus, card, col) {
-    var actions = [];
+    const actions = [];
 
     if (targetColumn === 'today') {
       /* Moving to Today column: ensure focus is on, and reopen if done */
@@ -210,7 +210,7 @@
 
   /* ── Card button actions ── */
   document.addEventListener('click', function (e) {
-    var btn;
+    let btn;
 
     /* Focus / Unfocus */
     btn = e.target.closest('.action-focus, .action-unfocus');

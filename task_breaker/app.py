@@ -304,7 +304,7 @@ def web_index(
 
     # Group tasks into board columns
     backlog = [t for t in tasks if t.status == "open" and not t.daily_focus]
-    today = [t for t in tasks if t.daily_focus and t.status in ("open", "done")]
+    today_tasks = [t for t in tasks if t.daily_focus and t.status in ("open", "done")]
     done = [t for t in tasks if t.status == "done" and not t.daily_focus]
 
     return templates.TemplateResponse(
@@ -313,11 +313,11 @@ def web_index(
             "request": request,
             "tasks": tasks,
             "backlog": backlog,
-            "today": today,
+            "today_tasks": today_tasks,
             "done": done,
             "sort": sort or "created_at",
             "order": order,
-            "today_date": _date.today(),
+            "current_date": _date.today(),
         },
     )
 
