@@ -16,6 +16,7 @@ from copilot import CopilotClient
 from copilot.generated.session_events import SessionEventType
 
 WORKIQ_EULA_URL = "https://github.com/microsoft/work-iq-mcp"
+AI_CONTEXT_MARKER = "[AI context] "
 
 
 def _default_eula_path() -> Path:
@@ -220,7 +221,13 @@ async def breakdown_task(
     source_command: Optional[str] = None,
     debug: bool = False,
     max_tasks: Optional[int] = None,
-) -> List[str]:
+) -> Tuple[List[str], Optional[str]]:
+    """Break down a task into steps and optionally return AI-generated context.
+
+    Returns:
+        A tuple of (steps, context) where context is a brief summary from
+        WorkIQ or None when WorkIQ is not used.
+    """
     client_opts: Dict[str, Any] = {}
     if debug:
         client_opts["log_level"] = "debug"
@@ -428,6 +435,26 @@ async def breakdown_task(
         }
     )
 
+    # Request a brief context summary for the task (best-effort)
+    context = None
+    if use_workiq:
+        try:
+            context_response = await session.send_and_wait(
+                {
+                    "prompt": (
+                        "Now provide a brief context summary (1-4 sentences) based on what "
+                        "you learned from WorkIQ about this task. This will be saved as a "
+                        "reference note. Return ONLY plain text, no JSON or formatting."
+                    )
+                }
+            )
+            if context_response and context_response.data:
+                ctx = context_response.data.content.strip()
+                if ctx:
+                    context = ctx
+        except Exception:
+            pass  # Context gathering is best-effort
+
     await session.destroy()
     await client.stop()
 
@@ -446,7 +473,89 @@ async def breakdown_task(
     if max_tasks is not None and max_tasks > 0 and len(steps) > max_tasks:
         steps = steps[:max_tasks]
 
-    return steps
+    return steps, context
+
+
+async def get_workiq_context(
+    title: str,
+    model: str,
+    workiq_command: str,
+    workiq_args: List[str],
+    debug: bool = False,
+) -> Optional[str]:
+    """Get a brief AI-generated context summary for a task via WorkIQ.
+
+    Returns a short (1-4 sentence) context summary or None on failure.
+    """
+    try:
+        client_opts: Dict[str, Any] = {}
+        if debug:
+            client_opts["log_level"] = "debug"
+        cli_path = resolve_copilot_cli_path(debug=debug)
+        if cli_path:
+            client_opts["cli_path"] = cli_path
+        client = CopilotClient(client_opts)
+        await client.start()
+
+        mcp_command = workiq_command
+        mcp_args = [token for arg in workiq_args for token in arg.split()]
+        if sys.platform == "win32":
+            mcp_args = ["/c", mcp_command] + mcp_args
+            mcp_command = "cmd"
+
+        session_config: Dict[str, Any] = {
+            "model": model,
+            "system_message": {
+                "content": (
+                    "You are a helpful assistant that provides brief context for tasks. "
+                    "When asked about a task, use WorkIQ to gather relevant context and "
+                    "provide a concise summary in 1-4 sentences."
+                )
+            },
+            "mcp_servers": {
+                "workiq": {
+                    "type": "local",
+                    "command": mcp_command,
+                    "args": mcp_args,
+                    "tools": ["*"],
+                    "timeout": 180000,
+                }
+            },
+        }
+
+        session = await client.create_session(session_config)
+
+        await session.send_and_wait(
+            {
+                "prompt": (
+                    f"I have a new task: {title}\n\n"
+                    "Use WorkIQ MCP tool (ask_work_iq) to gather any relevant context "
+                    "about this task - related work items, documentation, or prior discussions."
+                )
+            },
+            timeout=180000,
+        )
+
+        response = await session.send_and_wait(
+            {
+                "prompt": (
+                    "Based on the context gathered, provide a brief summary of relevant "
+                    "background context for this task in 1-4 sentences. "
+                    "Return ONLY the plain text summary, no JSON or formatting."
+                )
+            }
+        )
+
+        await session.destroy()
+        await client.stop()
+
+        if response and response.data:
+            ctx = response.data.content.strip()
+            if ctx:
+                return ctx
+        return None
+    except Exception:
+        return None
 
 
 def _make_permission_handler(project_dir: str):

@@ -21,6 +21,7 @@ DEFAULT_EULA_PATH = os.path.expanduser("~/.task-breaker/workiq_eula.json")
 DEFAULT_MAX_LEVEL = 3
 DEFAULT_MAX_TASKS_PER_LEVEL = "5-L"
 WORKIQ_EULA_URL = "https://github.com/microsoft/work-iq-mcp"
+AI_CONTEXT_MARKER = "[AI context] "
 
 
 def evaluate_max_tasks_formula(formula: str, level: int) -> Optional[int]:
@@ -506,7 +507,13 @@ async def breakdown_task(
     source_command: Optional[str] = None,
     debug: bool = False,
     max_tasks: Optional[int] = None,
-) -> List[str]:
+) -> Tuple[List[str], Optional[str]]:
+    """Break down a task into steps and optionally return AI-generated context.
+
+    Returns:
+        A tuple of (steps, context) where context is a brief summary from
+        WorkIQ or None when WorkIQ is not used.
+    """
     client_opts: Dict[str, Any] = {}
     if debug:
         client_opts["log_level"] = "debug"
@@ -641,6 +648,26 @@ async def breakdown_task(
         }
     )
 
+    # Request a brief context summary for the task (best-effort)
+    context = None
+    if use_workiq:
+        try:
+            context_response = await session.send_and_wait(
+                {
+                    "prompt": (
+                        "Now provide a brief context summary (1-4 sentences) based on what "
+                        "you learned from WorkIQ about this task. This will be saved as a "
+                        "reference note. Return ONLY plain text, no JSON or formatting."
+                    )
+                }
+            )
+            if context_response and context_response.data:
+                ctx = context_response.data.content.strip()
+                if ctx:
+                    context = ctx
+        except Exception:
+            pass  # Context gathering is best-effort
+
     await session.destroy()
     await client.stop()
 
@@ -659,7 +686,89 @@ async def breakdown_task(
     if max_tasks is not None and max_tasks > 0 and len(steps) > max_tasks:
         steps = steps[:max_tasks]
 
-    return steps
+    return steps, context
+
+
+async def get_workiq_context(
+    title: str,
+    model: str,
+    workiq_command: str,
+    workiq_args: List[str],
+    debug: bool = False,
+) -> Optional[str]:
+    """Get a brief AI-generated context summary for a task via WorkIQ.
+
+    Returns a short (1-4 sentence) context summary or None on failure.
+    """
+    try:
+        client_opts: Dict[str, Any] = {}
+        if debug:
+            client_opts["log_level"] = "debug"
+        cli_path = resolve_copilot_cli_path(debug=debug)
+        if cli_path:
+            client_opts["cli_path"] = cli_path
+        client = CopilotClient(client_opts)
+        await client.start()
+
+        mcp_command = workiq_command
+        mcp_args = [token for arg in workiq_args for token in arg.split()]
+        if sys.platform == "win32":
+            mcp_args = ["/c", mcp_command] + mcp_args
+            mcp_command = "cmd"
+
+        session_config: Dict[str, Any] = {
+            "model": model,
+            "system_message": {
+                "content": (
+                    "You are a helpful assistant that provides brief context for tasks. "
+                    "When asked about a task, use WorkIQ to gather relevant context and "
+                    "provide a concise summary in 1-4 sentences."
+                )
+            },
+            "mcp_servers": {
+                "workiq": {
+                    "type": "local",
+                    "command": mcp_command,
+                    "args": mcp_args,
+                    "tools": ["*"],
+                    "timeout": 180000,
+                }
+            },
+        }
+
+        session = await client.create_session(session_config)
+
+        await session.send_and_wait(
+            {
+                "prompt": (
+                    f"I have a new task: {title}\n\n"
+                    "Use WorkIQ MCP tool (ask_work_iq) to gather any relevant context "
+                    "about this task - related work items, documentation, or prior discussions."
+                )
+            },
+            timeout=180000,
+        )
+
+        response = await session.send_and_wait(
+            {
+                "prompt": (
+                    "Based on the context gathered, provide a brief summary of relevant "
+                    "background context for this task in 1-4 sentences. "
+                    "Return ONLY the plain text summary, no JSON or formatting."
+                )
+            }
+        )
+
+        await session.destroy()
+        await client.stop()
+
+        if response and response.data:
+            ctx = response.data.content.strip()
+            if ctx:
+                return ctx
+        return None
+    except Exception:
+        return None
 
 
 def _make_permission_handler(project_dir: str):
@@ -974,7 +1083,7 @@ def cmd_add(args: argparse.Namespace) -> None:
     task_id = next_task_id(tasks)
     timestamp = now_iso()
     # Gate WorkIQ behind EULA acceptance
-    use_workiq = not args.no_workiq if args.breakdown else False
+    use_workiq = not args.no_workiq
     if use_workiq and not ensure_workiq_eula(args):
         use_workiq = False
     args.usage_logger.emit(
@@ -983,14 +1092,15 @@ def cmd_add(args: argparse.Namespace) -> None:
             "name": "add",
             "breakdown": args.breakdown,
             "model": args.model if args.breakdown else None,
-            "workiq_enabled": use_workiq if args.breakdown else None,
+            "workiq_enabled": use_workiq,
         },
     )
     breakdown: List[str] = []
+    context: Optional[str] = None
     if args.breakdown:
         # Evaluate max_tasks formula for level 0 (new root task)
         max_tasks = evaluate_max_tasks_formula(args.max_tasks_per_level, 0)
-        breakdown = asyncio.run(
+        breakdown, context = asyncio.run(
             breakdown_task(
                 title=args.title,
                 model=args.model,
@@ -1003,6 +1113,21 @@ def cmd_add(args: argparse.Namespace) -> None:
                 max_tasks=max_tasks,
             )
         )
+    elif use_workiq:
+        # No breakdown requested, but WorkIQ is available — gather context
+        context = asyncio.run(
+            get_workiq_context(
+                title=args.title,
+                model=args.model,
+                workiq_command=args.workiq_command,
+                workiq_args=args.workiq_args,
+                debug=args.debug,
+            )
+        )
+    # Build AI context note
+    notes: Optional[str] = None
+    if context:
+        notes = f"{AI_CONTEXT_MARKER}{context}"
     task = Task(
         id=task_id,
         title=args.title,
@@ -1011,6 +1136,7 @@ def cmd_add(args: argparse.Namespace) -> None:
         updated_at=timestamp,
         breakdown=breakdown,
         due_date=args.due,
+        notes=notes,
     )
     tasks.append(task)
     if breakdown:
@@ -1186,7 +1312,7 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
     )
     # Evaluate max_tasks formula for this task's level
     max_tasks = evaluate_max_tasks_formula(args.max_tasks_per_level, task.level)
-    steps = asyncio.run(
+    steps, context = asyncio.run(
         breakdown_task(
             title=task.title,
             model=args.model,
@@ -1202,6 +1328,13 @@ def cmd_breakdown(args: argparse.Namespace) -> None:
     task.breakdown = steps
     timestamp = now_iso()
     task.updated_at = timestamp
+    # Preserve AI context from breakdown as a note
+    if context:
+        ai_note = f"{AI_CONTEXT_MARKER}{context}"
+        if task.notes:
+            task.notes = f"{task.notes}\n\n{ai_note}"
+        else:
+            task.notes = ai_note
     create_child_tasks(tasks, task, steps, args.max_level, timestamp)
     save_tasks(args.storage, tasks)
     print(render_task(task))

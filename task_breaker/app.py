@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .copilot_integration import (
+    AI_CONTEXT_MARKER,
     accept_workiq_eula_via_mcp,
     is_workiq_eula_accepted,
     save_workiq_eula_acceptance,
@@ -68,7 +69,11 @@ def api_task_subtree(task_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/tasks", response_model=Dict[str, Any], status_code=201)
-def api_create_task(body: Dict[str, Any], db: Session = Depends(get_db)):
+def api_create_task(
+    body: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     title = body.get("title", "").strip()
     if not title:
         raise HTTPException(status_code=422, detail="title is required")
@@ -84,6 +89,11 @@ def api_create_task(body: Dict[str, Any], db: Session = Depends(get_db)):
             raise HTTPException(status_code=422, detail="due_date must be YYYY-MM-DD")
     svc = TaskService(db)
     task = svc.create_task(title, due_date=due_date)
+
+    # Queue background WorkIQ context gathering for the new task
+    if is_workiq_eula_accepted(settings.workiq_eula_path):
+        background_tasks.add_task(_gather_task_context, task.id, title)
+
     return _task_to_dict(task)
 
 
@@ -179,10 +189,17 @@ async def api_breakdown_task(
                 "Please accept the EULA in Settings before using WorkIQ features."
             ),
         )
-    steps = await BreakdownService.breakdown_task(
+    steps, context = await BreakdownService.breakdown_task(
         task, model=model, use_workiq=use_workiq, debug=settings.debug
     )
     task = svc.update_breakdown(task_id, steps)
+    # Preserve AI context from breakdown as a note
+    if context:
+        ai_note = f"{AI_CONTEXT_MARKER}{context}"
+        existing = task.notes or ""
+        new_notes = f"{existing}\n\n{ai_note}" if existing else ai_note
+        svc.add_note(task_id, new_notes)
+        db.refresh(task)
     svc.create_child_tasks(task, steps, settings.max_level)
     db.refresh(task)
     return _task_to_dict(task)
@@ -314,6 +331,7 @@ def web_tree(request: Request, db: Session = Depends(get_db)):
 @app.post("/tasks", response_class=HTMLResponse)
 def web_add_task(
     request: Request,
+    background_tasks: BackgroundTasks,
     title: str = Form(...),
     due_date: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -327,7 +345,12 @@ def web_add_task(
             )
         except ValueError:
             pass
-    svc.create_task(title.strip(), due_date=parsed_due)
+    task = svc.create_task(title.strip(), due_date=parsed_due)
+
+    # Queue background WorkIQ context gathering for the new task
+    if is_workiq_eula_accepted(settings.workiq_eula_path):
+        background_tasks.add_task(_gather_task_context, task.id, title.strip())
+
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -402,10 +425,17 @@ async def web_breakdown_task(
             _svc = TaskService(_db)
             _task = _svc.get_task(task_id)
             use_workiq = is_workiq_eula_accepted(settings.workiq_eula_path)
-            steps = await BreakdownService.breakdown_task(
+            steps, context = await BreakdownService.breakdown_task(
                 _task, use_workiq=use_workiq, debug=settings.debug
             )
             _task = _svc.update_breakdown(task_id, steps)
+            # Preserve AI context from breakdown as a note
+            if context:
+                ai_note = f"{AI_CONTEXT_MARKER}{context}"
+                existing = _task.notes or ""
+                new_notes = f"{existing}\n\n{ai_note}" if existing else ai_note
+                _svc.add_note(task_id, new_notes)
+                _db.refresh(_task)
             _svc.create_child_tasks(_task, steps, settings.max_level)
         finally:
             try:
@@ -465,6 +495,27 @@ async def web_accept_workiq_eula(request: Request):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _gather_task_context(task_id: int, title: str) -> None:
+    """Background task to gather WorkIQ context for a newly created task."""
+    try:
+        context = await BreakdownService.get_workiq_context(
+            title=title, debug=settings.debug
+        )
+        if context:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                svc = TaskService(db)
+                svc.add_note(task_id, f"{AI_CONTEXT_MARKER}{context}")
+            finally:
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+    except Exception:
+        pass  # Context gathering is best-effort
 
 
 def _task_to_dict(task) -> Dict[str, Any]:
