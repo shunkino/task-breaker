@@ -301,14 +301,23 @@ def web_index(
 ):
     svc = TaskService(db)
     tasks = svc.list_tasks(sort_by=sort, sort_order=order)
+
+    # Group tasks into board columns
+    backlog = [t for t in tasks if t.status == "open" and not t.daily_focus]
+    today_tasks = [t for t in tasks if t.daily_focus and t.status in ("open", "done")]
+    done = [t for t in tasks if t.status == "done" and not t.daily_focus]
+
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "tasks": tasks,
+            "backlog": backlog,
+            "today_tasks": today_tasks,
+            "done": done,
             "sort": sort or "created_at",
             "order": order,
-            "today": _date.today(),
+            "current_date": _date.today(),
         },
     )
 

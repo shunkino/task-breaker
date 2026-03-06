@@ -55,3 +55,197 @@
 .tree-view details>summary>a {
   font-weight: bold;
 }
+
+/* ── Board layout ── */
+.board-container {
+  max-width: 1400px;
+}
+
+.board-header {
+  margin-bottom: 1rem;
+}
+
+.board-header h2 {
+  margin-bottom: 0.5rem;
+}
+
+.board-add-form fieldset {
+  margin-bottom: 0;
+}
+
+.board {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+  min-height: 60vh;
+}
+
+.board-column {
+  flex: 1 1 0;
+  min-width: 260px;
+  max-width: 400px;
+  background: var(--pico-card-background-color, #f8f9fa);
+  border: 1px solid var(--pico-muted-border-color, #dee2e6);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  max-height: 75vh;
+}
+
+.board-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--pico-muted-border-color, #dee2e6);
+  user-select: none;
+}
+
+.board-column-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.board-column-count {
+  background: var(--pico-muted-color, #6c757d);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  min-width: 1.4rem;
+  text-align: center;
+}
+
+.board-column-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 80px;
+  transition: background-color 0.15s ease;
+}
+
+.board-column-drop-target {
+  background-color: var(--pico-primary-focus, rgba(62, 133, 247, 0.12));
+}
+
+/* ── Cards ── */
+.board-card {
+  background: var(--pico-background-color, #fff);
+  border: 1px solid var(--pico-muted-border-color, #dee2e6);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  cursor: grab;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+}
+
+.board-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.board-card-dragging {
+  opacity: 0.35;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.board-card-done {
+  opacity: 0.7;
+}
+
+.board-card-done .board-card-title {
+  text-decoration: line-through;
+}
+
+.board-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  margin-bottom: 0.25rem;
+}
+
+.board-card-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--pico-color, inherit);
+  word-break: break-word;
+  flex: 1;
+}
+
+.board-card-title:hover {
+  text-decoration: underline;
+}
+
+.board-card-badge {
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.board-card-meta {
+  font-size: 0.78rem;
+  color: var(--pico-muted-color, #6c757d);
+  margin-bottom: 0.2rem;
+}
+
+.board-card-due {
+  font-size: 0.78rem;
+}
+
+.board-card-due.overdue {
+  color: var(--pico-color-red-500, #ef4444);
+  font-weight: 600;
+}
+
+.board-card-due.soon {
+  color: var(--pico-color-amber-500, #f59e0b);
+}
+
+.board-card-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.board-card-btn {
+  background: none;
+  border: 1px solid var(--pico-muted-border-color, #dee2e6);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  line-height: 1.2;
+  width: auto;
+  margin: 0;
+  color: var(--pico-muted-color, #6c757d);
+  transition: background-color 0.1s;
+}
+
+.board-card-btn:hover {
+  background-color: var(--pico-muted-border-color, #dee2e6);
+}
+
+/* Today column accent */
+.column-today .board-column-header {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.10), rgba(251, 191, 36, 0.04));
+}
+
+/* Done column accent */
+.column-done .board-column-header {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(34, 197, 94, 0.04));
+}
+
+/* Responsive: stack columns on small screens */
+@media (max-width: 768px) {
+  .board {
+    flex-direction: column;
+  }
+  .board-column {
+    max-width: 100%;
+    max-height: none;
+  }
+}

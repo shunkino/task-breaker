@@ -1,152 +1,274 @@
 {% extends "base.html" %}
 {% block title_suffix %} — Tasks{% endblock %}
+{% block main_class %} board-container{% endblock %}
 {% block content %}
-<h2>Tasks</h2>
 
-<article>
-  <form action="/tasks" method="post">
+<div class="board-header">
+  <h2>Tasks</h2>
+  <form action="/tasks" method="post" class="board-add-form">
     <fieldset role="group">
       <input type="text" name="title" placeholder="New task title…" required />
       <input type="date" name="due_date" title="Due date (optional)" />
       <button type="submit">Add</button>
     </fieldset>
   </form>
-</article>
+</div>
 
-<details>
-  <summary>Sort options</summary>
-  <form method="get" action="/" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:0.5rem">
-    <label>
-      Sort by
-      <select name="sort">
-        {% for field in [("created_at","Created"), ("id","ID"), ("title","Title"), ("status","Status"),
-        ("level","Level"), ("due_date","Due Date"), ("updated_at","Updated")] %}
-        <option value="{{ field[0] }}" {% if sort==field[0] %}selected{% endif %}>{{ field[1] }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      Order
-      <select name="order">
-        <option value="desc" {% if order=="desc" %}selected{% endif %}>Descending</option>
-        <option value="asc" {% if order=="asc" %}selected{% endif %}>Ascending</option>
-      </select>
-    </label>
-    <button type="submit" class="outline">Apply</button>
-  </form>
-</details>
-
-{% if tasks %}
-<table>
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Title</th>
-      <th>Status</th>
-      <th>Level</th>
-      <th>Due Date</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% set today = today %}
-    {% for task in tasks %}
-    <tr>
-      <td>{{ task.id }}</td>
-      <td>
-        <a href="/tasks/{{ task.id }}">{{ task.title }}</a>
-        {% if task.atomic %}<small> 🔒 atomic</small>{% endif %}
-        {% if task.parent_id %}<small> ↳ #{{ task.parent_id }}</small>{% endif %}
-      </td>
-      <td>
-        {% if task.status == "done" %}
-        <mark class="status-done">done</mark>
-        {% elif task.status == "archived" %}
-        <mark class="status-archived">archived</mark>
-        {% else %}
-        <mark class="status-open">open</mark>
-        {% endif %}
-      </td>
-      <td>{{ task.level }}</td>
-      <td>
+<div class="board" id="task-board">
+  {# ── Backlog column ── #}
+  <div class="board-column" data-column="backlog">
+    <div class="board-column-header">
+      <span class="board-column-title">📋 Backlog</span>
+      <span class="board-column-count" id="count-backlog">{{ backlog|length }}</span>
+    </div>
+    <div class="board-column-body" data-drop="backlog">
+      {% for task in backlog %}
+      <div class="board-card" draggable="true" data-id="{{ task.id }}" data-status="{{ task.status }}" data-focus="{{ 'true' if task.daily_focus else 'false' }}">
+        <div class="board-card-header">
+          <a href="/tasks/{{ task.id }}" class="board-card-title">{{ task.title }}</a>
+          {% if task.atomic %}<span class="board-card-badge">🔒</span>{% endif %}
+        </div>
         {% if task.due_date %}
-        {% set due = task.due_date.date() %}
-        {% if task.status != "done" and due < today %} <span style="color:var(--pico-color-red-500)">⚠️ {{
-          due.isoformat() }}</span>
-          {% elif task.status != "done" and (due - today).days <= 3 %} <span style="color:var(--pico-color-amber-500)">⏰
-            {{ due.isoformat() }}</span>
-            {% else %}
-            {{ due.isoformat() }}
-            {% endif %}
-            {% else %}
-            <span style="color:#aaa">—</span>
-            {% endif %}
-      </td>
-      <td>
-        <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
-          <button type="submit" class="outline secondary small-btn focus-toggle-btn" data-task-id="{{ task.id }}"
-            data-is-focus="{{ 'true' if task.daily_focus else 'false' }}" title="Toggle daily focus">
-            <span class="focus-icon">{% if task.daily_focus %}⭐{% else %}☆{% endif %}</span>
-          </button>
-        </form>
-        {% if task.status == "open" %}
-        <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
-          <button type="submit" class="outline secondary small-btn">✓ Complete</button>
-        </form>
+        <div class="board-card-meta">
+          {% set due = task.due_date.date() %}
+          {% if task.status != "done" and due < current_date %}
+          <span class="board-card-due overdue">⚠️ {{ due.isoformat() }}</span>
+          {% elif task.status != "done" and (due - current_date).days <= 3 %}
+          <span class="board-card-due soon">⏰ {{ due.isoformat() }}</span>
+          {% else %}
+          <span class="board-card-due">📅 {{ due.isoformat() }}</span>
+          {% endif %}
+        </div>
         {% endif %}
-        {% if task.status in ("done", "archived") %}
-        <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
-          <button type="submit" class="outline secondary small-btn">↩ Reopen</button>
-        </form>
+        {% if task.parent_id %}<div class="board-card-meta"><small>↳ #{{ task.parent_id }}</small></div>{% endif %}
+        <div class="board-card-actions">
+          <button type="button" class="board-card-btn action-focus" data-id="{{ task.id }}" title="Add to Today">☆</button>
+          <button type="button" class="board-card-btn action-complete" data-id="{{ task.id }}" title="Complete">✓</button>
+          <button type="button" class="board-card-btn action-delete" data-id="{{ task.id }}" title="Delete">✕</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Today column ── #}
+  <div class="board-column column-today" data-column="today">
+    <div class="board-column-header">
+      <span class="board-column-title">⭐ Today</span>
+      <span class="board-column-count" id="count-today">{{ today_tasks|length }}</span>
+    </div>
+    <div class="board-column-body" data-drop="today">
+      {% for task in today_tasks %}
+      <div class="board-card {% if task.status == 'done' %}board-card-done{% endif %}" draggable="true" data-id="{{ task.id }}" data-status="{{ task.status }}" data-focus="true">
+        <div class="board-card-header">
+          <a href="/tasks/{{ task.id }}" class="board-card-title">{{ task.title }}</a>
+          {% if task.atomic %}<span class="board-card-badge">🔒</span>{% endif %}
+        </div>
+        {% if task.due_date %}
+        <div class="board-card-meta">
+          {% set due = task.due_date.date() %}
+          {% if task.status != "done" and due < current_date %}
+          <span class="board-card-due overdue">⚠️ {{ due.isoformat() }}</span>
+          {% elif task.status != "done" and (due - current_date).days <= 3 %}
+          <span class="board-card-due soon">⏰ {{ due.isoformat() }}</span>
+          {% else %}
+          <span class="board-card-due">📅 {{ due.isoformat() }}</span>
+          {% endif %}
+        </div>
         {% endif %}
-        {% if task.status != "archived" %}
-        <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
-          <button type="submit" class="outline contrast small-btn">📦 Archive</button>
-        </form>
+        <div class="board-card-actions">
+          <button type="button" class="board-card-btn action-unfocus" data-id="{{ task.id }}" title="Remove from Today">⭐</button>
+          {% if task.status == "open" %}
+          <button type="button" class="board-card-btn action-complete" data-id="{{ task.id }}" title="Complete">✓</button>
+          {% else %}
+          <button type="button" class="board-card-btn action-reopen" data-id="{{ task.id }}" title="Reopen">↩</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Done column ── #}
+  <div class="board-column column-done" data-column="done">
+    <div class="board-column-header">
+      <span class="board-column-title">✅ Done</span>
+      <span class="board-column-count" id="count-done">{{ done|length }}</span>
+    </div>
+    <div class="board-column-body" data-drop="done">
+      {% for task in done %}
+      <div class="board-card board-card-done" draggable="true" data-id="{{ task.id }}" data-status="done" data-focus="false">
+        <div class="board-card-header">
+          <a href="/tasks/{{ task.id }}" class="board-card-title">{{ task.title }}</a>
+        </div>
+        {% if task.due_date %}
+        <div class="board-card-meta">
+          <span class="board-card-due">📅 {{ task.due_date.date().isoformat() }}</span>
+        </div>
         {% endif %}
-        <form action="/tasks/{{ task.id }}/delete" method="post" style="display:inline"
-          onsubmit="return confirm('Delete task {{ task.id }}?')">
-          <button type="submit" class="outline contrast small-btn">✕ Delete</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+        <div class="board-card-actions">
+          <button type="button" class="board-card-btn action-reopen" data-id="{{ task.id }}" title="Reopen">↩</button>
+          <button type="button" class="board-card-btn action-archive" data-id="{{ task.id }}" title="Archive">📦</button>
+          <button type="button" class="board-card-btn action-delete" data-id="{{ task.id }}" title="Delete">✕</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
 
 <script>
-  (function () {
-    document.addEventListener('click', function (e) {
-      if (e.target.closest('.focus-toggle-btn')) {
-        e.preventDefault();
-        const btn = e.target.closest('.focus-toggle-btn');
-        const taskId = btn.dataset.taskId;
-        const isFocus = btn.dataset.isFocus === 'true';
+(function () {
+  /* ── Drag-and-drop between columns ── */
+  let draggedCard = null;
 
-        // Toggle via API
-        fetch(`/api/tasks/${taskId}/focus`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        })
-          .then(r => {
-            if (!r.ok) throw new Error('Toggle failed');
-            return r.json();
-          })
-          .then(task => {
-            // Update button UI
-            const icon = btn.querySelector('.focus-icon');
-            icon.textContent = task.daily_focus ? '⭐' : '☆';
-            btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
-          })
-          .catch(err => {
-            console.error('Failed to toggle focus:', err);
-            alert('Failed to toggle daily focus. Please try again.');
-          });
+  document.addEventListener('dragstart', function (e) {
+    const card = e.target.closest('.board-card');
+    if (!card) return;
+    draggedCard = card;
+    card.classList.add('board-card-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', card.dataset.id);
+  });
+
+  document.addEventListener('dragend', function () {
+    if (draggedCard) draggedCard.classList.remove('board-card-dragging');
+    document.querySelectorAll('.board-column-body').forEach(function (col) {
+      col.classList.remove('board-column-drop-target');
+    });
+    draggedCard = null;
+  });
+
+  document.querySelectorAll('.board-column-body').forEach(function (col) {
+    col.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('board-column-drop-target');
+    });
+    col.addEventListener('dragleave', function (e) {
+      if (!col.contains(e.relatedTarget)) {
+        col.classList.remove('board-column-drop-target');
       }
     });
-  })();
+    col.addEventListener('drop', function (e) {
+      e.preventDefault();
+      col.classList.remove('board-column-drop-target');
+      if (!draggedCard) return;
+
+      const taskId = draggedCard.dataset.id;
+      const targetColumn = col.dataset.drop;
+      const currentStatus = draggedCard.dataset.status;
+      const currentFocus = draggedCard.dataset.focus === 'true';
+
+      handleDrop(taskId, targetColumn, currentStatus, currentFocus, draggedCard, col);
+    });
+  });
+
+  function handleDrop(taskId, targetColumn, currentStatus, currentFocus, card, col) {
+    const actions = [];
+
+    if (targetColumn === 'today') {
+      /* Moving to Today column: ensure focus is on, and reopen if done */
+      if (!currentFocus) actions.push(apiCall('/api/tasks/' + taskId + '/focus', 'POST'));
+      if (currentStatus === 'done') actions.push(apiCall('/api/tasks/' + taskId + '/reopen', 'POST'));
+    } else if (targetColumn === 'backlog') {
+      /* Moving to Backlog: ensure focus is off, reopen if done */
+      if (currentFocus) actions.push(apiCall('/api/tasks/' + taskId + '/focus', 'POST'));
+      if (currentStatus === 'done') actions.push(apiCall('/api/tasks/' + taskId + '/reopen', 'POST'));
+    } else if (targetColumn === 'done') {
+      /* Moving to Done: complete the task, remove focus */
+      if (currentStatus !== 'done') actions.push(apiCall('/api/tasks/' + taskId + '/complete', 'POST'));
+      if (currentFocus) actions.push(apiCall('/api/tasks/' + taskId + '/focus', 'POST'));
+    }
+
+    if (actions.length === 0) {
+      /* Dropped in the same column, just reorder visually */
+      col.appendChild(card);
+      return;
+    }
+
+    /* Execute all API calls sequentially */
+    actions.reduce(function (p, fn) { return p.then(fn); }, Promise.resolve())
+      .then(function () { window.location.reload(); })
+      .catch(function (err) {
+        console.error('Drop action failed:', err);
+        alert('Failed to move task. Please try again.');
+      });
+  }
+
+  function apiCall(url, method) {
+    return function () {
+      return fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' }
+      }).then(function (r) {
+        if (!r.ok) throw new Error('API call failed: ' + r.status);
+        return r.json();
+      });
+    };
+  }
+
+  /* ── Card button actions ── */
+  document.addEventListener('click', function (e) {
+    let btn;
+
+    /* Focus / Unfocus */
+    btn = e.target.closest('.action-focus, .action-unfocus');
+    if (btn) {
+      e.preventDefault();
+      apiCall('/api/tasks/' + btn.dataset.id + '/focus', 'POST')()
+        .then(function () { window.location.reload(); })
+        .catch(function () { alert('Failed to toggle focus.'); });
+      return;
+    }
+
+    /* Complete */
+    btn = e.target.closest('.action-complete');
+    if (btn) {
+      e.preventDefault();
+      apiCall('/api/tasks/' + btn.dataset.id + '/complete', 'POST')()
+        .then(function () { window.location.reload(); })
+        .catch(function () { alert('Failed to complete task.'); });
+      return;
+    }
+
+    /* Reopen */
+    btn = e.target.closest('.action-reopen');
+    if (btn) {
+      e.preventDefault();
+      apiCall('/api/tasks/' + btn.dataset.id + '/reopen', 'POST')()
+        .then(function () { window.location.reload(); })
+        .catch(function () { alert('Failed to reopen task.'); });
+      return;
+    }
+
+    /* Archive */
+    btn = e.target.closest('.action-archive');
+    if (btn) {
+      e.preventDefault();
+      apiCall('/api/tasks/' + btn.dataset.id + '/archive', 'POST')()
+        .then(function () { window.location.reload(); })
+        .catch(function () { alert('Failed to archive task.'); });
+      return;
+    }
+
+    /* Delete */
+    btn = e.target.closest('.action-delete');
+    if (btn) {
+      e.preventDefault();
+      if (!confirm('Delete task #' + btn.dataset.id + '?')) return;
+      fetch('/api/tasks/' + btn.dataset.id, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error('Delete failed');
+          window.location.reload();
+        })
+        .catch(function () { alert('Failed to delete task.'); });
+      return;
+    }
+  });
+})();
 </script>
-{% else %}
-<p>No tasks yet. Add one above!</p>
-{% endif %}
 {% endblock %}
