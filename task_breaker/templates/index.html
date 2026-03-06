@@ -93,16 +93,13 @@
         <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">✓ Complete</button>
         </form>
-        {% elif task.status != "archived" %}
+        {% endif %}
+        {% if task.status in ("done", "archived") %}
         <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
           <button type="submit" class="outline secondary small-btn">↩ Reopen</button>
         </form>
         {% endif %}
-        {% if task.status == "archived" %}
-        <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
-          <button type="submit" class="outline secondary small-btn">↩ Reopen</button>
-        </form>
-        {% else %}
+        {% if task.status != "archived" %}
         <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
           <button type="submit" class="outline contrast small-btn">📦 Archive</button>
         </form>
