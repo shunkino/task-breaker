@@ -45,6 +45,7 @@ def serve(
     port: int = typer.Option(8000, help="Bind port"),
     reload: bool = typer.Option(False, help="Enable auto-reload (development)"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug output for Copilot/WorkIQ integration"),
+    yolo: bool = typer.Option(False, "--yolo", help="Auto-approve all WorkIQ permission requests without prompting"),
 ):
     """Start the Task Breaker server."""
     if debug:
@@ -53,6 +54,8 @@ def serve(
             level=logging.DEBUG,
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
+    if yolo:
+        os.environ["TASK_BREAKER_YOLO"] = "true"
     uvicorn.run("task_breaker.app:app", host=host, port=port, reload=reload)
 
 

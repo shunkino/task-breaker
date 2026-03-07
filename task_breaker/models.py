@@ -31,3 +31,4 @@ class TaskORM(Base):
     daily_focus: Mapped[bool] = mapped_column(Boolean, default=False)
     focus_order: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ai_context_pending: Mapped[bool] = mapped_column(Boolean, default=False)
+    breakdown_pending: Mapped[bool] = mapped_column(Boolean, default=False)

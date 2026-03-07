@@ -39,6 +39,13 @@
   </div>
   {% endif %}
 
+  {% if task.breakdown_pending %}
+  <div class="ai-pending-banner" data-breakdown-pending="{{ task.id }}">
+    <span class="ai-spinner"></span> AI is breaking down this task… This may take a few minutes.
+  </div>
+  <div id="pending-permissions"></div>
+  {% endif %}
+
   <section>
     <h4>Due Date</h4>
     <form action="/tasks/{{ task.id }}/due" method="post"
@@ -83,7 +90,7 @@
   {% else %}
   <section>
     <p><em>No breakdown yet.</em></p>
-    {% if not task.atomic and task.status == "open" %}
+    {% if not task.atomic and task.status == "open" and not task.breakdown_pending %}
     <form action="/tasks/{{ task.id }}/breakdown" method="post">
       <button type="submit">🤖 Break down with AI</button>
     </form>
@@ -145,7 +152,7 @@
     {% endif %}
   </footer>
 </article>
-{% if task.ai_context_pending %}
+{% if task.ai_context_pending or task.breakdown_pending %}
 <script>
 (function () {
   var taskId = {{ task.id }};
@@ -153,11 +160,49 @@
     fetch('/api/tasks/' + taskId + '/ai-status')
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (!data.ai_context_pending) window.location.reload();
+        if (!data.ai_context_pending && !data.breakdown_pending) window.location.reload();
       })
       .catch(function () {});
   }
   setInterval(pollStatus, 5000);
+
+  {% if task.breakdown_pending %}
+  var permContainer = document.getElementById('pending-permissions');
+  function pollPermissions() {
+    fetch('/api/permissions/pending')
+      .then(function (r) { return r.json(); })
+      .then(function (perms) {
+        var taskPerms = perms.filter(function (p) { return p.task_id === taskId; });
+        if (taskPerms.length === 0) {
+          permContainer.innerHTML = '';
+          return;
+        }
+        var html = '<div style="margin-top:0.5rem;padding:0.75rem;border:2px solid var(--pico-primary);border-radius:0.5rem;background:var(--pico-card-background-color)">';
+        html += '<strong>⚠️ WorkIQ needs your approval:</strong>';
+        taskPerms.forEach(function (p) {
+          html += '<div style="margin:0.5rem 0;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">';
+          html += '<span>Tool: <code>' + (p.tool || 'unknown') + '</code>';
+          if (p.server) html += ' on <code>' + p.server + '</code>';
+          html += '</span>';
+          html += '<button onclick="resolvePermission(\'' + p.id + '\', true)" class="small-btn" style="padding:0.2rem 0.6rem">✓ Approve</button>';
+          html += '<button onclick="resolvePermission(\'' + p.id + '\', false)" class="outline small-btn contrast" style="padding:0.2rem 0.6rem">✗ Deny</button>';
+          html += '</div>';
+        });
+        html += '</div>';
+        permContainer.innerHTML = html;
+      })
+      .catch(function () {});
+  }
+  setInterval(pollPermissions, 3000);
+  pollPermissions();
+
+  window.resolvePermission = function (permId, approve) {
+    var action = approve ? 'approve' : 'deny';
+    fetch('/api/permissions/' + permId + '/' + action, { method: 'POST' })
+      .then(function () { pollPermissions(); })
+      .catch(function () {});
+  };
+  {% endif %}
 })();
 </script>
 {% endif %}

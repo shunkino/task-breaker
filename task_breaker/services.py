@@ -78,6 +78,7 @@ class TaskService:
             "due_date": task.due_date.date().isoformat() if task.due_date else None,
             "daily_focus": task.daily_focus,
             "ai_context_pending": task.ai_context_pending,
+            "breakdown_pending": task.breakdown_pending,
             "children": [
                 TaskService._build_tree_node(c, children_map) for c in children
             ],
@@ -267,6 +268,7 @@ class BreakdownService:
         workiq_args: Optional[List[str]] = None,
         debug: bool = False,
         max_tasks_per_level: Optional[str] = None,
+        auto_approve: bool = False,
     ) -> Tuple[List[str], Optional[str], Dict[str, str]]:
         """Break down a task into steps and optionally return AI-generated context.
 
@@ -306,6 +308,8 @@ class BreakdownService:
             workiq_args=_workiq_args,
             debug=debug,
             max_tasks=max_tasks,
+            auto_approve=auto_approve,
+            task_id=task.id,
         )
 
     @staticmethod

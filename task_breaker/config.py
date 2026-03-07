@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     max_level: int = 3
     max_tasks_per_level: str = "5-L"
     debug: bool = False
+    yolo: bool = False
 
     @property
     def db_url(self) -> str:

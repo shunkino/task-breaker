@@ -9,6 +9,8 @@ import os
 import re
 import shutil
 import sys
+import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +22,41 @@ _logger = logging.getLogger(__name__)
 
 WORKIQ_EULA_URL = "https://github.com/microsoft/work-iq-mcp"
 AI_CONTEXT_MARKER = "[AI context] "
+
+
+# ---------------------------------------------------------------------------
+# Web-based WorkIQ permission approval store
+# ---------------------------------------------------------------------------
+
+_pending_permissions_lock = threading.Lock()
+_pending_permissions: Dict[str, dict] = {}
+
+
+def get_pending_permissions() -> List[dict]:
+    """Return a snapshot of all pending permission requests for the web UI."""
+    with _pending_permissions_lock:
+        return [
+            {
+                "id": pid,
+                "kind": info["kind"],
+                "server": info.get("server"),
+                "tool": info.get("tool"),
+                "args": info.get("args"),
+                "task_id": info.get("task_id"),
+            }
+            for pid, info in _pending_permissions.items()
+        ]
+
+
+def resolve_permission(permission_id: str, approved: bool) -> bool:
+    """Approve or deny a pending permission request. Returns True if found."""
+    with _pending_permissions_lock:
+        info = _pending_permissions.get(permission_id)
+        if not info:
+            return False
+        info["decision"] = "approved" if approved else "denied"
+        info["event"].set()
+        return True
 
 
 def _default_eula_path() -> Path:
@@ -224,6 +261,8 @@ async def breakdown_task(
     source_command: Optional[str] = None,
     debug: bool = False,
     max_tasks: Optional[int] = None,
+    auto_approve: bool = False,
+    task_id: Optional[int] = None,
 ) -> Tuple[List[str], Optional[str], Dict[str, str]]:
     """Break down a task into steps and optionally return AI-generated context.
 
@@ -302,9 +341,12 @@ async def breakdown_task(
             """
             Handle WorkIQ MCP permission requests.
 
-            By default, ask the user for confirmation before approving a request.
-            To restore legacy auto-approval behavior, set the environment variable
-            TASK_BREAKER_AUTO_APPROVE_WORKIQ=1.
+            Approval modes (checked in order):
+            1. auto_approve parameter (web/yolo mode)
+            2. TASK_BREAKER_AUTO_APPROVE_WORKIQ=1 environment variable
+            3. Interactive terminal prompt (CLI mode)
+            4. Web-based approval via pending permissions store
+            5. Deny by default
             """
             kind = request.get("kind", "unknown")
             if debug:
@@ -312,6 +354,16 @@ async def breakdown_task(
                     f"[DEBUG] permission_request: kind={kind!r} request={request}",
                     file=sys.stderr,
                 )
+
+            # Auto-approve via function parameter (web-triggered or yolo mode).
+            if auto_approve:
+                decision = {"kind": "approved"}
+                if debug:
+                    print(
+                        "[DEBUG] permission_request: auto-approved via auto_approve param",
+                        file=sys.stderr,
+                    )
+                return decision
 
             # Explicit opt-in to auto-approve via environment variable.
             if os.environ.get("TASK_BREAKER_AUTO_APPROVE_WORKIQ") == "1":
@@ -362,11 +414,49 @@ async def breakdown_task(
                     )
                 return decision
 
-            # Non-interactive environment: deny by default.
-            decision = {"kind": "denied"}
+            # Non-interactive environment: use web-based approval if possible.
+            tool_raw = request.get("tool")
+            tool_name = tool_raw.get("name") if isinstance(tool_raw, dict) else tool_raw
+            server_name = request.get("server_name") or request.get("server")
+            perm_id = str(uuid.uuid4())
+            event = threading.Event()
+            perm_entry = {
+                "kind": kind,
+                "server": server_name,
+                "tool": tool_name,
+                "args": request.get("args"),
+                "task_id": task_id,
+                "event": event,
+                "decision": None,
+            }
+            with _pending_permissions_lock:
+                _pending_permissions[perm_id] = perm_entry
+
+            _logger.info(
+                "WorkIQ permission request queued for web approval: id=%s kind=%s tool=%s",
+                perm_id, kind, tool_name,
+            )
             if debug:
                 print(
-                    "[DEBUG] permission_request: denied (non-interactive environment)",
+                    f"[DEBUG] permission_request: queued for web approval id={perm_id}",
+                    file=sys.stderr,
+                )
+
+            # Wait up to 5 minutes for the web user to respond
+            approved = event.wait(timeout=300)
+
+            with _pending_permissions_lock:
+                decision_str = perm_entry.get("decision", "denied")
+                _pending_permissions.pop(perm_id, None)
+
+            if not approved or decision_str != "approved":
+                decision = {"kind": "denied"}
+            else:
+                decision = {"kind": "approved"}
+
+            if debug:
+                print(
+                    f"[DEBUG] permission_request: web_decision={decision['kind']}",
                     file=sys.stderr,
                 )
             return decision

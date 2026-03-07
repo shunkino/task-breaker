@@ -14,7 +14,9 @@ from .config import settings
 from .copilot_integration import (
     AI_CONTEXT_MARKER,
     accept_workiq_eula_via_mcp,
+    get_pending_permissions,
     is_workiq_eula_accepted,
+    resolve_permission,
     save_workiq_eula_acceptance,
     WORKIQ_EULA_URL,
 )
@@ -133,7 +135,7 @@ def api_task_ai_status(task_id: int, db: Session = Depends(get_db)):
     """Lightweight poll endpoint: returns whether AI context gathering is in progress."""
     svc = TaskService(db)
     task = svc.get_task(task_id)
-    return {"id": task.id, "ai_context_pending": task.ai_context_pending}
+    return {"id": task.id, "ai_context_pending": task.ai_context_pending, "breakdown_pending": task.breakdown_pending}
 
 
 @app.post("/api/tasks/{task_id}/complete", response_model=Dict[str, Any])
@@ -227,6 +229,7 @@ async def api_breakdown_task(
         use_workiq=use_workiq,
         debug=settings.debug,
         max_tasks_per_level=max_tasks_per_level,
+        auto_approve=settings.yolo,
     )
     task = svc.update_breakdown(task_id, steps)
     # Preserve AI context from breakdown as a note (skip if one already exists)
@@ -297,6 +300,28 @@ async def api_accept_workiq_eula():
         # Best-effort: record locally even if MCP call didn't confirm
         save_workiq_eula_acceptance(settings.workiq_eula_path)
     return {"accepted": True, "message": "WorkIQ EULA accepted."}
+
+
+@app.get("/api/permissions/pending")
+def api_get_pending_permissions():
+    """List pending WorkIQ permission requests awaiting web approval."""
+    return get_pending_permissions()
+
+
+@app.post("/api/permissions/{permission_id}/approve")
+def api_approve_permission(permission_id: str):
+    """Approve a pending WorkIQ permission request."""
+    if not resolve_permission(permission_id, approved=True):
+        raise HTTPException(status_code=404, detail="Permission request not found or already resolved.")
+    return {"id": permission_id, "decision": "approved"}
+
+
+@app.post("/api/permissions/{permission_id}/deny")
+def api_deny_permission(permission_id: str):
+    """Deny a pending WorkIQ permission request."""
+    if not resolve_permission(permission_id, approved=False):
+        raise HTTPException(status_code=404, detail="Permission request not found or already resolved.")
+    return {"id": permission_id, "decision": "denied"}
 
 
 # ---------------------------------------------------------------------------
@@ -486,6 +511,10 @@ async def web_breakdown_task(
     svc = TaskService(db)
     task = svc.get_task(task_id)
 
+    # Mark as breakdown-in-progress before queueing
+    task.breakdown_pending = True
+    db.commit()
+
     async def _do_breakdown():
         _db_gen = get_db()
         _db = next(_db_gen)
@@ -494,7 +523,8 @@ async def web_breakdown_task(
             _task = _svc.get_task(task_id)
             use_workiq = is_workiq_eula_accepted(settings.workiq_eula_path)
             steps, context, step_contexts = await BreakdownService.breakdown_task(
-                _task, use_workiq=use_workiq, debug=settings.debug
+                _task, use_workiq=use_workiq, debug=settings.debug,
+                auto_approve=settings.yolo,
             )
             _task = _svc.update_breakdown(task_id, steps)
             # Preserve AI context from breakdown as a note (skip if one already exists)
@@ -511,6 +541,14 @@ async def web_breakdown_task(
                     _logger.debug("Failed to save context note for task %d", task_id, exc_info=True)
             _svc.create_child_tasks(_task, steps, settings.max_level, step_contexts=step_contexts)
         finally:
+            # Clear the breakdown_pending flag
+            try:
+                _task_final = _db.query(TaskORM).filter_by(id=task_id).first()
+                if _task_final:
+                    _task_final.breakdown_pending = False
+                    _db.commit()
+            except Exception:
+                _logger.debug("Failed to clear breakdown_pending for task %d", task_id, exc_info=True)
             try:
                 next(_db_gen)
             except StopIteration:
@@ -647,4 +685,5 @@ def _task_to_dict(task) -> Dict[str, Any]:
         "due_date": task.due_date.date().isoformat() if task.due_date else None,
         "daily_focus": task.daily_focus,
         "ai_context_pending": task.ai_context_pending,
+        "breakdown_pending": task.breakdown_pending,
     }
