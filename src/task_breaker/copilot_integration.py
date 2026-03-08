@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from copilot import CopilotClient
+from copilot import CopilotClient, PermissionRequestResult
 from copilot.generated.session_events import SessionEventType
 
 _logger = logging.getLogger(__name__)
@@ -115,9 +115,9 @@ async def accept_workiq_eula_via_mcp(
         mcp_args = ["/c", mcp_command] + mcp_args
         mcp_command = "cmd"
 
-    def _approve_eula_permission(request: dict, context: dict) -> dict:
+    def _approve_eula_permission(request, context) -> PermissionRequestResult:
         """Auto-approve the accept_eula tool call (user already confirmed)."""
-        return {"kind": "approved"}
+        return PermissionRequestResult(kind="approved")
 
     session_config: Dict[str, Any] = {
         "model": model,
@@ -167,7 +167,7 @@ async def accept_workiq_eula_via_mcp(
         if debug:
             print(f"[DEBUG] accept_eula error: {exc}", file=sys.stderr)
     finally:
-        await session.destroy()
+        await session.disconnect()
         await client.stop()
 
     if success:
@@ -316,9 +316,7 @@ async def breakdown_task(
 
     session_config: Dict[str, Any] = {
         "model": model,
-        "system_message": {
-            "content": system_message_content
-        },
+        "system_message": {"content": system_message_content},
     }
 
     if use_workiq:
@@ -348,40 +346,38 @@ async def breakdown_task(
             4. Web-based approval via pending permissions store
             5. Deny by default
             """
-            kind = request.get("kind", "unknown")
+            kind = getattr(request, "kind", "unknown")
+            kind_str = kind.value if hasattr(kind, "value") else str(kind)
             if debug:
                 print(
-                    f"[DEBUG] permission_request: kind={kind!r} request={request}",
+                    f"[DEBUG] permission_request: kind={kind_str!r} request={request}",
                     file=sys.stderr,
                 )
 
             # Auto-approve via function parameter (web-triggered or yolo mode).
             if auto_approve:
-                decision = {"kind": "approved"}
                 if debug:
                     print(
                         "[DEBUG] permission_request: auto-approved via auto_approve param",
                         file=sys.stderr,
                     )
-                return decision
+                return PermissionRequestResult(kind="approved")
 
             # Explicit opt-in to auto-approve via environment variable.
             if os.environ.get("TASK_BREAKER_AUTO_APPROVE_WORKIQ") == "1":
-                decision = {"kind": "approved"}
                 if debug:
                     print(
                         "[DEBUG] permission_request: auto-approved via "
                         "TASK_BREAKER_AUTO_APPROVE_WORKIQ",
                         file=sys.stderr,
                     )
-                return decision
+                return PermissionRequestResult(kind="approved")
 
             # If interactive, prompt the user for a decision.
             if sys.stdin is not None and sys.stdin.isatty():
-                tool_raw = request.get("tool")
-                tool_name = tool_raw.get("name") if isinstance(tool_raw, dict) else tool_raw
-                server_name = request.get("server_name") or request.get("server")
-                summary_parts = [f"kind={kind!r}"]
+                tool_name = getattr(request, "tool_name", None)
+                server_name = getattr(request, "server_name", None)
+                summary_parts = [f"kind={kind_str!r}"]
                 if server_name:
                     summary_parts.append(f"server={server_name!r}")
                 if tool_name:
@@ -403,28 +399,27 @@ async def breakdown_task(
                     answer = ""
 
                 if answer.startswith("y"):
-                    decision = {"kind": "approved"}
+                    decision = PermissionRequestResult(kind="approved")
                 else:
-                    decision = {"kind": "denied"}
+                    decision = PermissionRequestResult(kind="denied-interactively-by-user")
 
                 if debug:
                     print(
-                        f"[DEBUG] permission_request: user_decision={decision['kind']}",
+                        f"[DEBUG] permission_request: user_decision={decision.kind}",
                         file=sys.stderr,
                     )
                 return decision
 
             # Non-interactive environment: use web-based approval if possible.
-            tool_raw = request.get("tool")
-            tool_name = tool_raw.get("name") if isinstance(tool_raw, dict) else tool_raw
-            server_name = request.get("server_name") or request.get("server")
+            tool_name = getattr(request, "tool_name", None)
+            server_name = getattr(request, "server_name", None)
             perm_id = str(uuid.uuid4())
             event = threading.Event()
             perm_entry = {
-                "kind": kind,
+                "kind": kind_str,
                 "server": server_name,
                 "tool": tool_name,
-                "args": request.get("args"),
+                "args": getattr(request, "args", None),
                 "task_id": task_id,
                 "event": event,
                 "decision": None,
@@ -434,7 +429,9 @@ async def breakdown_task(
 
             _logger.info(
                 "WorkIQ permission request queued for web approval: id=%s kind=%s tool=%s",
-                perm_id, kind, tool_name,
+                perm_id,
+                kind_str,
+                tool_name,
             )
             if debug:
                 print(
@@ -450,13 +447,13 @@ async def breakdown_task(
                 _pending_permissions.pop(perm_id, None)
 
             if not approved or decision_str != "approved":
-                decision = {"kind": "denied"}
+                decision = PermissionRequestResult(kind="denied-interactively-by-user")
             else:
-                decision = {"kind": "approved"}
+                decision = PermissionRequestResult(kind="approved")
 
             if debug:
                 print(
-                    f"[DEBUG] permission_request: web_decision={decision['kind']}",
+                    f"[DEBUG] permission_request: web_decision={decision.kind}",
                     file=sys.stderr,
                 )
             return decision
@@ -573,7 +570,7 @@ async def breakdown_task(
         except Exception:
             _logger.debug("breakdown_task: context gathering failed", exc_info=True)
 
-    await session.destroy()
+    await session.disconnect()
     await client.stop()
 
     content = response.data.content if response and response.data else "[]"
@@ -612,7 +609,9 @@ async def get_workiq_context(
     Returns a short (1-4 sentence) context summary or None on failure.
     """
     try:
-        _logger.debug("get_workiq_context: starting for title=%r model=%s", title, model)
+        _logger.debug(
+            "get_workiq_context: starting for title=%r model=%s", title, model
+        )
 
         client_opts: Dict[str, Any] = {}
         if debug:
@@ -640,9 +639,10 @@ async def get_workiq_context(
             """
             _logger.debug(
                 "get_workiq_context: permission_request kind=%s request=%s",
-                request.get("kind"), request,
+                getattr(request, "kind", None),
+                request,
             )
-            return {"kind": "approved"}
+            return PermissionRequestResult(kind="approved")
 
         session_config: Dict[str, Any] = {
             "model": model,
@@ -666,7 +666,9 @@ async def get_workiq_context(
         }
 
         _loggable = {k: v for k, v in session_config.items() if not callable(v)}
-        _logger.debug("get_workiq_context: session_config=%s", json.dumps(_loggable, indent=2))
+        _logger.debug(
+            "get_workiq_context: session_config=%s", json.dumps(_loggable, indent=2)
+        )
 
         session = await client.create_session(session_config)
         _logger.debug("get_workiq_context: session created")
@@ -727,14 +729,16 @@ async def get_workiq_context(
         )
         _logger.debug("get_workiq_context: summary response received")
 
-        await session.destroy()
+        await session.disconnect()
         await client.stop()
         _logger.debug("get_workiq_context: session destroyed, client stopped")
 
         if response and response.data:
             ctx = response.data.content.strip()
             if ctx:
-                _logger.debug("get_workiq_context: returning context (%d chars)", len(ctx))
+                _logger.debug(
+                    "get_workiq_context: returning context (%d chars)", len(ctx)
+                )
                 return ctx
         _logger.debug("get_workiq_context: no context in response")
         return None
@@ -777,15 +781,11 @@ async def get_copilot_context(
         session = await client.create_session(session_config)
 
         response = await session.send_and_wait(
-            {
-                "prompt": (
-                    f"Provide a brief context summary for this task: {title}"
-                )
-            },
+            {"prompt": (f"Provide a brief context summary for this task: {title}")},
             timeout=30000,
         )
 
-        await session.destroy()
+        await session.disconnect()
         await client.stop()
 
         if response and response.data:
@@ -801,25 +801,29 @@ def _make_permission_handler(project_dir: str):
     """Create a permission handler that auto-approves read/write in the project dir."""
     norm_project = os.path.normcase(os.path.abspath(project_dir))
 
-    def _handler(request: dict, context: dict) -> dict:
-        kind = request.get("kind", "unknown")
-        path = request.get("path", "")
-        if kind in ("read", "write") and path:
+    def _handler(request, context) -> PermissionRequestResult:
+        kind = getattr(request, "kind", "unknown")
+        kind_str = kind.value if hasattr(kind, "value") else str(kind)
+        path = getattr(request, "path", "") or ""
+        if kind_str in ("read", "write") and path:
             norm_path = os.path.normcase(os.path.abspath(path))
             if norm_path.startswith(norm_project):
-                return {"kind": "approved"}
+                return PermissionRequestResult(kind="approved")
         details: List[str] = []
-        for key, value in request.items():
-            if key in ("kind", "toolCallId"):
+        import dataclasses as _dc
+        for f in _dc.fields(request):
+            if f.name in ("kind", "tool_call_id"):
                 continue
-            details.append(f"  {key}: {value}")
-        print(f"\n[Permission requested] {kind}")
+            value = getattr(request, f.name, None)
+            if value is not None:
+                details.append(f"  {f.name}: {value}")
+        print(f"\n[Permission requested] {kind_str}")
         if details:
             print("\n".join(details))
         answer = input("Allow this action? [y/N]: ").strip().lower()
         if answer in ("y", "yes"):
-            return {"kind": "approved"}
-        return {"kind": "denied-interactively-by-user"}
+            return PermissionRequestResult(kind="approved")
+        return PermissionRequestResult(kind="denied-interactively-by-user")
 
     return _handler
 
@@ -985,7 +989,7 @@ async def implement_task(
         errors.append(str(exc))
         response = None
 
-    await session.destroy()
+    await session.disconnect()
     await client.stop()
 
     content = response.data.content if response and response.data else ""

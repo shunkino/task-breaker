@@ -10,7 +10,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from copilot import CopilotClient
+from copilot import CopilotClient, PermissionRequestResult
 from copilot.generated.session_events import SessionEventType
 
 APP_NAME = "task-breaker"
@@ -56,7 +56,7 @@ def evaluate_max_tasks_formula(formula: str, level: int) -> Optional[int]:
     safe_formula = formula.replace("L", str(level))
 
     # Validate that only safe characters are present
-    if not re.match(r'^[0-9+\-*/() ]+$', safe_formula):
+    if not re.match(r"^[0-9+\-*/() ]+$", safe_formula):
         # Invalid characters in formula, return None (auto mode)
         return None
 
@@ -166,9 +166,9 @@ async def accept_workiq_eula_via_mcp(
         mcp_args = ["/c", mcp_command] + mcp_args
         mcp_command = "cmd"
 
-    def _approve_eula_permission(request: dict, context: dict) -> dict:
+    def _approve_eula_permission(request, context) -> PermissionRequestResult:
         """Auto-approve the accept_eula tool call (user already confirmed)."""
-        return {"kind": "approved"}
+        return PermissionRequestResult(kind="approved")
 
     session_config: Dict[str, Any] = {
         "model": model,
@@ -217,7 +217,7 @@ async def accept_workiq_eula_via_mcp(
         if debug:
             print(f"[DEBUG] accept_eula error: {exc}", file=sys.stderr)
     finally:
-        await session.destroy()
+        await session.disconnect()
         await client.stop()
 
     if success:
@@ -541,6 +541,7 @@ async def breakdown_task(
 
     session_config: Dict[str, Any] = {
         "model": model,
+        "on_permission_request": lambda request, context: PermissionRequestResult(kind="approved"),
         "system_message": {
             "content": (
                 "You are a task manager that breaks down tasks."
@@ -672,7 +673,7 @@ async def breakdown_task(
         except Exception:
             pass  # Context gathering is best-effort
 
-    await session.destroy()
+    await session.disconnect()
     await client.stop()
 
     content = response.data.content if response and response.data else "[]"
@@ -722,6 +723,7 @@ async def get_workiq_context(
 
         session_config: Dict[str, Any] = {
             "model": model,
+            "on_permission_request": lambda request, context: PermissionRequestResult(kind="approved"),
             "system_message": {
                 "content": (
                     "You are a helpful assistant that provides brief context for tasks. "
@@ -763,7 +765,7 @@ async def get_workiq_context(
             }
         )
 
-        await session.destroy()
+        await session.disconnect()
         await client.stop()
 
         if response and response.data:
@@ -779,29 +781,33 @@ def _make_permission_handler(project_dir: str):
     """Create a permission handler that auto-approves read/write in the project dir."""
     norm_project = os.path.normcase(os.path.abspath(project_dir))
 
-    def _handler(request: dict, context: dict) -> dict:
-        kind = request.get("kind", "unknown")
-        path = request.get("path", "")
+    def _handler(request, context) -> PermissionRequestResult:
+        kind = getattr(request, "kind", "unknown")
+        kind_str = kind.value if hasattr(kind, "value") else str(kind)
+        path = getattr(request, "path", "") or ""
 
         # Auto-approve read/write operations inside the project directory
-        if kind in ("read", "write") and path:
+        if kind_str in ("read", "write") and path:
             norm_path = os.path.normcase(os.path.abspath(path))
             if norm_path.startswith(norm_project):
-                return {"kind": "approved"}
+                return PermissionRequestResult(kind="approved")
 
         # Everything else: ask the user
         details: List[str] = []
-        for key, value in request.items():
-            if key in ("kind", "toolCallId"):
+        import dataclasses as _dc
+        for f in _dc.fields(request):
+            if f.name in ("kind", "tool_call_id"):
                 continue
-            details.append(f"  {key}: {value}")
-        print(f"\n[Permission requested] {kind}")
+            value = getattr(request, f.name, None)
+            if value is not None:
+                details.append(f"  {f.name}: {value}")
+        print(f"\n[Permission requested] {kind_str}")
         if details:
             print("\n".join(details))
         answer = input("Allow this action? [y/N]: ").strip().lower()
         if answer in ("y", "yes"):
-            return {"kind": "approved"}
-        return {"kind": "denied-interactively-by-user"}
+            return PermissionRequestResult(kind="approved")
+        return PermissionRequestResult(kind="denied-interactively-by-user")
 
     return _handler
 
@@ -1029,7 +1035,7 @@ async def implement_task(
         errors.append(str(exc))
         response = None
 
-    await session.destroy()
+    await session.disconnect()
     await client.stop()
 
     content = response.data.content if response and response.data else ""
