@@ -46,6 +46,59 @@ A FastAPI web server with a browser-based UI, REST API, and Typer CLI client.
 └──────────────────────────────────┘
 ```
 
+
+```mermaid
+flowchart TB
+    subgraph User["👤 User"]
+        WebUI["Browser UI\n(FastAPI + Jinja2)"]
+        CLI["Typer CLI\n(src/cli.py)"]
+        StandaloneCLI["Standalone CLI\n(src/task_breaker.py)"]
+    end
+
+    subgraph Server["Task Breaker Server"]
+        API["FastAPI Routes\n(app.py)"]
+        TaskSvc["TaskService\n(services.py)"]
+        BDSvc["BreakdownService\n(services.py)"]
+        Scheduler["APScheduler\n(scheduler.py)"]
+        DB[(SQLite)]
+    end
+
+    subgraph AI["AI Execution Engine"]
+        CopilotSDK["GitHub Copilot SDK\n(CopilotClient)"]
+        Session["Copilot Session\n(model: gpt-4.1)"]
+    end
+
+    subgraph WorkContext["Work Context"]
+        WorkIQ["WorkIQ MCP Server\n(npx @microsoft/workiq mcp)"]
+        WorkItems["Work Items,\nDocs & Discussions"]
+    end
+
+    %% User → Server
+    WebUI -- "HTTP" --> API
+    CLI -- "HTTP" --> API
+    StandaloneCLI -- "direct call" --> CopilotSDK
+
+    %% Server internals
+    API --> TaskSvc
+    API --> BDSvc
+    TaskSvc --> DB
+    Scheduler -- "auto-breakdown\nstale tasks" --> BDSvc
+
+    %% Breakdown → AI
+    BDSvc -- "create session\n+ send prompt" --> CopilotSDK
+    CopilotSDK --> Session
+
+    %% AI ↔ WorkIQ
+    Session -- "ask_work_iq\n(MCP tool call)" --> WorkIQ
+    WorkIQ -- "context:\nrelated items,\nprior discussions" --> Session
+
+    WorkIQ -. "queries" .-> WorkItems
+
+    %% AI → Server
+    Session -- "JSON steps\n+ context" --> BDSvc
+    BDSvc -- "create child tasks\n+ attach AI context" --> TaskSvc
+```
+
 ### Standalone CLI Mode
 A single-file CLI (`task_breaker.py`) that talks directly to the Copilot SDK. Tasks stored in JSON.
 
