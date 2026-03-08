@@ -161,7 +161,7 @@ async def accept_workiq_eula_via_mcp(
                     "Call the accept_eula tool now to record their acceptance."
                 )
             },
-            timeout=60000,
+            timeout=60,
         )
     except Exception as exc:
         if debug:
@@ -401,7 +401,9 @@ async def breakdown_task(
                 if answer.startswith("y"):
                     decision = PermissionRequestResult(kind="approved")
                 else:
-                    decision = PermissionRequestResult(kind="denied-interactively-by-user")
+                    decision = PermissionRequestResult(
+                        kind="denied-interactively-by-user"
+                    )
 
                 if debug:
                     print(
@@ -513,7 +515,7 @@ async def breakdown_task(
                     "Summarize what you find."
                 )
             },
-            timeout=180000,
+            timeout=180,
         )
 
     response = await session.send_and_wait(
@@ -523,7 +525,8 @@ async def breakdown_task(
                 "Return ONLY a JSON array of steps. Task: "
                 f"{title}"
             )
-        }
+        },
+        timeout=120,
     )
 
     # Request context summaries for the parent task and each sub-step.
@@ -545,7 +548,8 @@ async def breakdown_task(
                         "breakdown array) to a 1-2 sentence context note relevant to that specific step.\n"
                         "Return ONLY the JSON object, no markdown fences or extra text."
                     )
-                }
+                },
+                timeout=120,
             )
             if context_response and context_response.data:
                 raw = context_response.data.content.strip()
@@ -714,7 +718,7 @@ async def get_workiq_context(
                     "about this task - related work items, documentation, or prior discussions."
                 )
             },
-            timeout=180000,
+            timeout=180,
         )
         _logger.debug("get_workiq_context: WorkIQ query completed, requesting summary")
 
@@ -725,7 +729,8 @@ async def get_workiq_context(
                     "background context for this task in 1-4 sentences. "
                     "Return ONLY the plain text summary, no JSON or formatting."
                 )
-            }
+            },
+            timeout=120,
         )
         _logger.debug("get_workiq_context: summary response received")
 
@@ -782,7 +787,7 @@ async def get_copilot_context(
 
         response = await session.send_and_wait(
             {"prompt": (f"Provide a brief context summary for this task: {title}")},
-            timeout=30000,
+            timeout=30,
         )
 
         await session.disconnect()
@@ -811,6 +816,7 @@ def _make_permission_handler(project_dir: str):
                 return PermissionRequestResult(kind="approved")
         details: List[str] = []
         import dataclasses as _dc
+
         for f in _dc.fields(request):
             if f.name in ("kind", "tool_call_id"):
                 continue
@@ -937,7 +943,7 @@ async def implement_task(
                         "Summarize what you find."
                     )
                 },
-                timeout=180000,
+                timeout=180,
             )
 
         response = await session.send_and_wait(
@@ -953,7 +959,7 @@ async def implement_task(
                     "for the project is written.\n\n" + impl_detail
                 )
             },
-            timeout=180000,
+            timeout=180,
         )
 
         max_continuations = 5
@@ -983,7 +989,7 @@ async def implement_task(
                         "Actually write and create the files."
                     )
                 },
-                timeout=180000,
+                timeout=180,
             )
     except Exception as exc:
         errors.append(str(exc))

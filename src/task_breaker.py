@@ -211,7 +211,7 @@ async def accept_workiq_eula_via_mcp(
                     "Call the accept_eula tool now to record their acceptance."
                 )
             },
-            timeout=60000,
+            timeout=60,
         )
     except Exception as exc:
         if debug:
@@ -541,7 +541,9 @@ async def breakdown_task(
 
     session_config: Dict[str, Any] = {
         "model": model,
-        "on_permission_request": lambda request, context: PermissionRequestResult(kind="approved"),
+        "on_permission_request": lambda request, context: PermissionRequestResult(
+            kind="approved"
+        ),
         "system_message": {
             "content": (
                 "You are a task manager that breaks down tasks."
@@ -635,7 +637,7 @@ async def breakdown_task(
                     "Summarize what you find."
                 )
             },
-            timeout=180000,
+            timeout=180,
         )
 
     # Now request the breakdown with any context gathered
@@ -646,7 +648,8 @@ async def breakdown_task(
                 "Return ONLY a JSON array of steps. Task: "
                 f"{title}"
             )
-        }
+        },
+        timeout=120,
     )
 
     # Request a brief context summary for the task (best-effort).
@@ -664,7 +667,8 @@ async def breakdown_task(
                         "you learned from WorkIQ about this task. This will be saved as a "
                         "reference note. Return ONLY plain text, no JSON or formatting."
                     )
-                }
+                },
+                timeout=120,
             )
             if context_response and context_response.data:
                 ctx = context_response.data.content.strip()
@@ -723,7 +727,9 @@ async def get_workiq_context(
 
         session_config: Dict[str, Any] = {
             "model": model,
-            "on_permission_request": lambda request, context: PermissionRequestResult(kind="approved"),
+            "on_permission_request": lambda request, context: PermissionRequestResult(
+                kind="approved"
+            ),
             "system_message": {
                 "content": (
                     "You are a helpful assistant that provides brief context for tasks. "
@@ -752,7 +758,7 @@ async def get_workiq_context(
                     "about this task - related work items, documentation, or prior discussions."
                 )
             },
-            timeout=180000,
+            timeout=180,
         )
 
         response = await session.send_and_wait(
@@ -762,7 +768,8 @@ async def get_workiq_context(
                     "background context for this task in 1-4 sentences. "
                     "Return ONLY the plain text summary, no JSON or formatting."
                 )
-            }
+            },
+            timeout=120,
         )
 
         await session.disconnect()
@@ -795,6 +802,7 @@ def _make_permission_handler(project_dir: str):
         # Everything else: ask the user
         details: List[str] = []
         import dataclasses as _dc
+
         for f in _dc.fields(request):
             if f.name in ("kind", "tool_call_id"):
                 continue
@@ -979,7 +987,7 @@ async def implement_task(
                         "Summarize what you find."
                     )
                 },
-                timeout=180000,
+                timeout=180,
             )
 
         # Step 2: Now implement based on context gathered
@@ -996,7 +1004,7 @@ async def implement_task(
                     "for the project is written.\n\n" + impl_detail
                 )
             },
-            timeout=180000,
+            timeout=180,
         )
 
         # Step 3: Continue prompting if the agent stopped before creating files
@@ -1029,7 +1037,7 @@ async def implement_task(
                         "Actually write and create the files."
                     )
                 },
-                timeout=180000,
+                timeout=180,
             )
     except Exception as exc:
         errors.append(str(exc))
