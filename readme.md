@@ -30,22 +30,6 @@ AGENTS.md               # Custom instructions for AI agents
 mcp.json                # MCP server configuration (WorkIQ)
 ```
 
-### Architecture Overview
-
-```mermaid
-flowchart LR
-    User["👤 User creates a task"] --> TB["Task Breaker"]
-    TB -- "gather work context" --> WorkIQ["WorkIQ MCP (work items, docs, discussions)"]
-    WorkIQ -- "relevant context" --> GitHubCopilot["GitHub Copilot SDK (AI breakdown)"]
-    TB -- "break down task request" --> GitHubCopilot
-    GitHubCopilot -- "actionable sub-tasks + context notes" --> TB
-```
-
-1. User adds a high-level task.
-2. Task Breaker queries **WorkIQ** for related work items, docs, and discussions.
-3. That context feeds into the **GitHub Copilot SDK**, which generates an actionable breakdown.
-4. Sub-tasks (with AI context) are saved back and ready to work on.
-
 ### Task Breakdown Flow
 
 ```mermaid
@@ -54,12 +38,13 @@ flowchart TD
         U["👤 User"]
     end
 
-    U -- "creates" --> T0["📋 Task 'Plan Q2 roadmap'"]
+    U -- "creates" --> T0["📋 Task 'Learn about GitHub Copilot SDK'"]
 
     subgraph Context ["Context Gathering (WorkIQ MCP)"]
         W1["📎 Related work items"]
         W2["📄 Documents & wikis"]
         W3["💬 Discussions & threads"]
+        W4["📅 Shedule & meeting notes"]
     end
 
     subgraph AI ["AI Breakdown (GitHub Copilot SDK)"]
@@ -67,7 +52,7 @@ flowchart TD
     end
 
     T0 -- "stale or user-triggered" --> COP
-    W1 & W2 & W3 -- "grounding context" --> COP
+    W1 & W2 & W3 & W4 -- "grounding context" --> COP
 
     COP -- "generates" --> T1["✅ Sub-task 1 'Review last quarter OKRs'"]
     COP -- "generates" --> T2["✅ Sub-task 2 'Collect team input'"]
@@ -86,7 +71,10 @@ flowchart TD
 
 **Key:** A single user task becomes multiple actionable sub-tasks, each informed by real workplace context — so breakdowns are relevant, not generic.
 
-
+1. User adds a high-level task.
+2. Task Breaker queries **WorkIQ** for related work items, docs, and discussions.
+3. That context feeds into the **GitHub Copilot SDK**, which generates an actionable breakdown.
+4. Sub-tasks (with AI context) are saved back and ready to work on.
 
 ### Feature Status
 
