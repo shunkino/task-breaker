@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "workiq": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/workiq", "mcp"],
+      "description": "WorkIQ MCP server — provides workplace context (calendar, emails, tasks) for AI-powered task breakdown. Requires Node.js and accepting WorkIQ EULA (`workiq accept-eula`)."
+    }
+  }
+}

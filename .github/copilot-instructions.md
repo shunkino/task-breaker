@@ -1,15 +1,16 @@
 # Copilot Instructions
 
 ## Build, test, and lint
-- Install deps: `uv venv` then activate the venv and run `uv sync`.
+- Install deps: `uv sync` (creates `.venv` automatically).
+- Run server: `uv run python src/cli.py serve`
+- Run standalone CLI: `uv run python src/task_breaker.py`
 - Tests: no test suite is defined in this repo.
 - Linting/formatting: no linting tools are defined in this repo.
 
 ## High-level architecture
-- Single-file CLI (`task_breaker.py`) that manages tasks stored in a JSON file under `~/.task-breaker/tasks.json` by default.
-- Tasks are modeled as a `Task` dataclass and loaded/saved as JSON via `load_tasks`/`save_tasks`.
-- Task breakdown uses the GitHub Copilot SDK to open a session and optionally calls the WorkIQ MCP server (local `workiq mcp`) when `--no-workiq` is not set.
-- CLI commands are built with `argparse` and map to command handlers (`cmd_add`, `cmd_list`, `cmd_show`, `cmd_complete`, `cmd_note`, `cmd_breakdown`).
+- **Server mode** (`src/task_breaker/`): FastAPI web server with browser UI, REST API, Typer CLI client (`src/cli.py`), SQLite storage, APScheduler for auto-breakdown.
+- **Standalone CLI mode** (`src/task_breaker.py`): Single-file CLI using argparse, JSON file storage, direct Copilot SDK integration.
+- Both modes use GitHub Copilot for AI-powered task breakdown and optionally integrate with WorkIQ MCP.
 
 ## Key conventions
 - Keep task storage as JSON and preserve the schema defined by the `Task` dataclass.

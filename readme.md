@@ -1,160 +1,38 @@
 ## Task Breaker
 
-Task Breaker is a local task management app that uses AI (GitHub Copilot SDK + WorkIQ MCP) to automatically break down high-level tasks into smaller, actionable steps.
+AI-powered task decomposition for productivity. Automatically breaks down stale tasks into smaller, actionable steps using GitHub Copilot SDK and WorkIQ MCP.
 
-It can run in two modes:
+### Quick Start
 
-1. **Server mode** — A FastAPI web server with a browser-based UI, REST API, and a Typer CLI client (`cli.py`) that communicates over HTTP. Tasks are stored in SQLite. Includes a background scheduler for auto-breakdown of stale tasks.
-2. **Standalone CLI mode** — The original single-file CLI (`task_breaker.py`) that talks directly to the Copilot SDK with no server required. Tasks are stored in a JSON file.
-
-Both modes use GitHub Copilot for AI-powered task breakdown and optionally integrate with WorkIQ MCP for contextual grounding.
-
----
-
-### Server mode
-
-Task Breaker runs as a local server with a web portal and REST API.
-
-#### Install
 ```bash
-uv sync          # install all dependencies (creates .venv automatically if needed)
+uv sync                                  # install dependencies
+uv run python src/cli.py serve           # start the server
+# open http://127.0.0.1:8000             # web portal
+uv run python src/cli.py add "My task" --breakdown   # add + break down
 ```
 
-#### Start the server
-```bash
-uv run python cli.py serve
-# or with custom host/port
-uv run python cli.py serve --host 127.0.0.1 --port 8000
+### Project Structure
+
+```
+src/                    # Working source code
+  cli.py                #   Typer CLI client (server mode)
+  task_breaker.py       #   Standalone CLI (no server required)
+  task_breaker/         #   FastAPI server package
+docs/                   # Full documentation
+  README.md             #   Problem, setup, deployment, architecture, RAI notes
+  design.md             #   Architecture diagrams (Mermaid)
+presentations/          # Demo deck
+  TaskBreaker.md        #   Draft script (placeholder for .pptx)
+AGENTS.md               # Custom instructions for AI agents
+mcp.json                # MCP server configuration (WorkIQ)
 ```
 
-Alternatively, activate the virtual environment once and use `python` directly:
-```bash
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-python cli.py serve
-```
+### Documentation
 
-#### Web portal
-Open <http://127.0.0.1:8000> in your browser to manage tasks visually.
-
-#### New CLI client (`cli.py`)
-```bash
-uv run python cli.py add "Plan Q2 roadmap"
-uv run python cli.py add "Build login page" --breakdown   # triggers AI breakdown immediately
-uv run python cli.py list
-uv run python cli.py list --status open
-uv run python cli.py show 1
-uv run python cli.py breakdown 1
-uv run python cli.py complete 1
-uv run python cli.py note 1 "Follow up with design"
-uv run python cli.py delete 1
-```
-
-> The server must be running before using `cli.py` commands (except `serve`).
-
-#### Auto-breakdown scheduler
-The server includes a background scheduler that automatically breaks down stale tasks.
-A task is considered stale when it is:
-- `open` with no breakdown
-- older than the configured threshold (default: 3 days)
-- not marked as atomic
-- has `auto_breakdown_enabled = true`
-
-Configure the scheduler via the **Settings** page at <http://127.0.0.1:8000/settings>
-or with environment variables (prefix `TASK_BREAKER_`).
-
-#### REST API
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/tasks` | List tasks (`?status=open\|done`) |
-| POST | `/api/tasks` | Create task `{"title": "..."}` |
-| GET | `/api/tasks/{id}` | Get task |
-| POST | `/api/tasks/{id}/complete` | Mark done |
-| POST | `/api/tasks/{id}/note` | Add note `{"note": "..."}` |
-| DELETE | `/api/tasks/{id}` | Delete task |
-| POST | `/api/tasks/{id}/breakdown` | Trigger AI breakdown |
-| GET | `/api/settings` | Get settings |
-| PUT | `/api/settings` | Update settings |
-
-#### Configuration
-Set environment variables (prefix `TASK_BREAKER_`) or create a `.env` file:
-```
-TASK_BREAKER_MODEL=gpt-4.1
-TASK_BREAKER_AUTO_BREAKDOWN_ENABLED=true
-TASK_BREAKER_AUTO_BREAKDOWN_THRESHOLD_DAYS=3
-TASK_BREAKER_CHECK_INTERVAL_HOURS=1
-TASK_BREAKER_MAX_LEVEL=3
-```
-
-Data is stored as SQLite at `~/.task-breaker/tasks.db`.
-
----
-
-## Task Breaker CLI (original standalone)
-
-### Background
-
-This project was born out of my personal experience with daily todo lists. I often couldn't finish all my tasks in a given day, and they would quickly stack up — eventually making it impossible to keep up with the growing number of todos.
-
-My assumption is that the reason tasks pile up is that they aren't broken down into small enough chunks. To solve this, I came up with the idea of automatic task breakdown using AI tools. I utilized [WorkIQ](https://github.com/microsoft/workiq) to let the agent understand my situation correctly, and GitHub Copilot to allow it to even create simple apps or fix issues in code automatically.
-
-**User scenario:** When a user has a todo task that hasn't been finished for *x* days, the Task Breaker app will ask the user if they want to break down that task into smaller pieces.
-
-**Goal:** Automatically break down tasks into smaller ones if they remain unresolved for a predefined number of days. For example, if the user sets the timer to 3 days and a registered task is not finished within that period, this tool will automatically kick in and split the task into smaller, more actionable chunks. This way, the user can more easily start working on the task, increasing the probability that it moves forward. The task status also becomes more granular, giving better visibility into progress.
-
-
-### Prereqs
-- Python 3.10+
-- uv (Python package manager)
-- GitHub Copilot CLI installed and authenticated
-- Node.js (for WorkIQ MCP via npx)
-
-### Install
-```bash
-uv venv
-. .venv/bin/activate
-uv sync
-```
-
-### Usage
-```bash
-./task_breaker.py add "Plan Q2 roadmap" --breakdown
-./task_breaker.py list
-./task_breaker.py breakdown 1
-./task_breaker.py complete 1
-./task_breaker.py note 1 "Follow up with design"
-```
-
-### Options
-  --storage PATH         Override storage path
-  --model MODEL          Copilot model (default: gpt-4.1)
-  --no-workiq            Disable WorkIQ MCP server
-  --workiq-command CMD   Override WorkIQ command (default: workiq)
-  --workiq-args ...      Override WorkIQ args (default: mcp)
-  --usage-log [MODE]     Usage logging: off|stderr|file|both (default: off)
-  --usage-log-path PATH  Usage log file path (default: ~/.task-breaker/usage.log)
-
-### WorkIQ notes
-- Install WorkIQ CLI: `npm install -g @microsoft/workiq`
-- First use requires accepting WorkIQ EULA: `workiq accept-eula`
-- To use via npx instead: `--workiq-command npx --workiq-args -y @microsoft/workiq mcp`
-
-### GitHub Copilot CLI notes
-- Install: `npm install -g @github/copilot`
-- The SDK looks for `copilot` in PATH or uses `COPILOT_CLI_PATH` environment variable
-
-#### Windows platform
-On Windows, VS Code installs a `copilot.ps1` bootstrapper that shadows the npm-installed CLI. Python's `subprocess` cannot execute `.ps1` files directly.
-
-**Fix:** Set `COPILOT_CLI_PATH` to point to the npm-installed `.cmd` wrapper:
-
-```powershell
-$env:COPILOT_CLI_PATH = "$env:APPDATA\npm\copilot.cmd"
-```
-
-Or set it permanently:
-```powershell
-[Environment]::SetEnvironmentVariable("COPILOT_CLI_PATH", "$env:APPDATA\npm\copilot.cmd", "User")
-```
-
-### UV notes
-- `uv sync` will create/update `uv.lock` for pinned versions.
+See **[docs/README.md](docs/README.md)** for full documentation including:
+- Problem → Solution narrative
+- Prerequisites and setup
+- Deployment guide
+- Architecture diagrams
+- REST API reference
+- Responsible AI notes
