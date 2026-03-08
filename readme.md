@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/logo.png" alt="Task Breaker logo" width="200">
+</p>
+
 ## Task Breaker
 
 AI-powered task decomposition for productivity. Automatically breaks down stale tasks into smaller, actionable steps using GitHub Copilot SDK and WorkIQ MCP.
@@ -54,10 +58,10 @@ flowchart TD
     T0 -- "stale or user-triggered" --> COP
     W1 & W2 & W3 & W4 -- "grounding context" --> COP
 
-    COP -- "generates" --> T1["✅ Sub-task 1 'Review last quarter OKRs'"]
-    COP -- "generates" --> T2["✅ Sub-task 2 'Collect team input'"]
-    COP -- "generates" --> T3["✅ Sub-task 3 'Draft roadmap document'"]
-    COP -- "generates" --> T4["✅ Sub-task 4 'Schedule review meeting'"]
+    COP -- "generates" --> T1["✅ Sub-task 1 'Ask Junya about GitHub Copilot CLI's new feature'"]
+    COP -- "generates" --> T2["✅ Sub-task 2 'Read documentation about SDK's capability'"]
+    COP -- "generates" --> T3["✅ Sub-task 3 'Integrate the SDK to the app you wrote last month as the PoC'"]
+    COP -- "generates" --> T4["✅ Sub-task 4 'Join GitHub Copilot Teams channel'"]
 
     T1 & T2 & T3 & T4 -- "child of" --> T0
 
