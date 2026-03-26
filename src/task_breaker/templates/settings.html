@@ -4,18 +4,24 @@
 <h2>Settings</h2>
 
 <article>
-  <h4>WorkIQ EULA</h4>
+  <header>
+    <h4 style="margin-bottom:0;color:var(--text-primary)">WorkIQ EULA</h4>
+  </header>
   {% if workiq_eula_accepted %}
-  <p>✅ WorkIQ EULA has been accepted. WorkIQ features are enabled.</p>
-  <small>EULA: <a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">{{ workiq_eula_url }}</a></small>
+  <div class="flex-row">
+    <mark class="status-done">accepted</mark>
+    <span style="color:var(--text-secondary);font-size:var(--text-sm)">WorkIQ features are enabled.</span>
+  </div>
+  <small style="display:block;margin-top:var(--sp-2)">EULA: <a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">{{ workiq_eula_url }}</a></small>
   {% else %}
   <p>⚠️ WorkIQ features require EULA acceptance before use.</p>
   <p>Please review the End User License Agreement:</p>
   <p><a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">{{ workiq_eula_url }}</a></p>
   <form action="/settings/workiq-eula" method="post">
-    <label>
+    <label class="toggle">
       <input type="checkbox" id="eula-confirm" required />
-      I have read and accept the <a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">WorkIQ EULA</a>
+      <span class="toggle-track"></span>
+      <span class="toggle-label">I have read and accept the <a href="{{ workiq_eula_url }}" target="_blank" rel="noopener">WorkIQ EULA</a></span>
     </label>
     <button type="submit">Accept EULA</button>
   </form>
@@ -23,39 +29,44 @@
 </article>
 
 <article>
+  <header>
+    <h4 style="margin-bottom:0;color:var(--text-primary)">Auto-Breakdown</h4>
+  </header>
   <form action="/settings" method="post">
-    <label>
-      <input type="checkbox" name="auto_breakdown_enabled" value="on" {% if settings.auto_breakdown_enabled %}checked{%
-        endif %} />
-      Enable auto-breakdown scheduler
+    <label class="toggle">
+      <input type="checkbox" name="auto_breakdown_enabled" value="on" {% if settings.auto_breakdown_enabled %}checked{% endif %} />
+      <span class="toggle-track"></span>
+      <span class="toggle-label">Enable auto-breakdown scheduler</span>
     </label>
 
     <label for="threshold">
       Auto-breakdown threshold (days)
       <input type="number" id="threshold" name="auto_breakdown_threshold_days"
-        value="{{ settings.auto_breakdown_threshold_days }}" min="1" />
+        value="{{ settings.auto_breakdown_threshold_days }}" min="1" style="max-width:200px" />
     </label>
 
     <label for="interval">
       Check interval (hours)
       <input type="number" id="interval" name="check_interval_hours" value="{{ settings.check_interval_hours }}"
-        min="1" />
+        min="1" style="max-width:200px" />
     </label>
 
     <label for="max-tasks">
       Max tasks per level
       <input type="text" id="max-tasks" name="max_tasks_per_level"
-        value="{{ settings.max_tasks_per_level }}" placeholder="5-L" />
+        value="{{ settings.max_tasks_per_level }}" placeholder="5-L" style="max-width:200px" />
       <small>Formula like '5-L' (where L is level), a fixed number like '10', or 'auto' for LLM-decided</small>
     </label>
 
-    <button type="submit">Save</button>
+    <button type="submit">Save settings</button>
   </form>
 </article>
 
 <article>
-  <h4>Current configuration</h4>
-  <table>
+  <header>
+    <h4 style="margin-bottom:0;color:var(--text-primary)">Current Configuration</h4>
+  </header>
+  <table class="config-table">
     <tbody>
       <tr>
         <td>AI Model</td>
@@ -79,6 +90,6 @@
       </tr>
     </tbody>
   </table>
-  <small>To change model / WorkIQ settings, set environment variables or edit <code>.env</code>.</small>
+  <small style="display:block;margin-top:var(--sp-4)">To change model / WorkIQ settings, set environment variables or edit <code>.env</code>.</small>
 </article>
 {% endblock %}

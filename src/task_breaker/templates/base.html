@@ -4,29 +4,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark light" />
   <title>Task Breaker{% block title_suffix %}{% endblock %}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 
 <body>
-  <header class="container">
-    <nav>
-      <ul>
-        <li><strong>⚡ Task Breaker</strong></li>
-      </ul>
-      <ul>
-        <li><a href="/">📋 Tasks</a></li>
-        <li><a href="/focus">⭐ Daily Focus</a></li>
-        <li><a href="/tree">🌳 Tree</a></li>
-        <li><a href="/settings">⚙️ Settings</a></li>
-      </ul>
-    </nav>
-  </header>
+  <nav class="app-nav">
+    <a href="/" class="nav-brand">
+      <span class="nav-logo">⚡</span>
+      <span class="nav-title">Task Breaker</span>
+    </a>
+    <div class="nav-links" id="nav-links">
+      <a href="/" class="nav-link" data-path="/">📋 Tasks</a>
+      <a href="/focus" class="nav-link" data-path="/focus">✦ Focus</a>
+      <a href="/tree" class="nav-link" data-path="/tree">⌸ Tree</a>
+      <a href="/settings" class="nav-link" data-path="/settings">⚙ Settings</a>
+    </div>
+  </nav>
   <main class="container{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
+  <script>
+    /* Highlight active nav link */
+    (function() {
+      var path = window.location.pathname;
+      document.querySelectorAll('.nav-link').forEach(function(link) {
+        var linkPath = link.getAttribute('data-path');
+        if (linkPath === '/' ? path === '/' : path.startsWith(linkPath)) {
+          link.classList.add('active');
+        }
+      });
+    })();
+  </script>
 </body>
 
 </html>

@@ -17,28 +17,25 @@
       {% endif %}
       {{ node.title }}
       {% if node.atomic %}<small> 🔒 atomic</small>{% endif %}
-      {% if node.daily_focus %}<span class="focus-indicator" data-task-id="{{ node.id }}">⭐</span>{% else %}<span class="focus-indicator" data-task-id="{{ node.id }}">☆</span>{% endif %}
+      {% if node.daily_focus %}<span class="focus-indicator" data-task-id="{{ node.id }}">★</span>{% else %}<span class="focus-indicator" data-task-id="{{ node.id }}">☆</span>{% endif %}
       <small>(level {{ node.level }})</small>
       <button type="button" class="outline secondary small-btn focus-toggle-btn"
               data-task-id="{{ node.id }}"
               data-is-focus="{{ 'true' if node.daily_focus else 'false' }}"
-              title="Toggle daily focus"
-              style="font-size:0.8rem;padding:0.1rem 0.3rem;margin-left:0.3rem">
-        <span class="focus-icon">{% if node.daily_focus %}⭐{% else %}☆{% endif %}</span>
+              title="Toggle daily focus">
+        <span class="focus-icon">{% if node.daily_focus %}★{% else %}☆{% endif %}</span>
       </button>
       {% if node.status == "open" %}
       <button type="button" class="outline secondary small-btn complete-btn"
               data-task-id="{{ node.id }}"
-              title="Complete task"
-              style="font-size:0.8rem;padding:0.1rem 0.3rem;margin-left:0.3rem">
+              title="Complete task">
         ✓
       </button>
       {% endif %}
       {% if node.status != "archived" %}
       <button type="button" class="outline contrast small-btn archive-btn"
               data-task-id="{{ node.id }}"
-              title="Archive task"
-              style="font-size:0.8rem;padding:0.1rem 0.3rem;margin-left:0.3rem">
+              title="Archive task">
         📦
       </button>
       {% endif %}
@@ -63,7 +60,6 @@
 
 <script>
 (function () {
-  // Handle focus toggle
   document.addEventListener('click', function(e) {
     if (e.target.closest('.focus-toggle-btn')) {
       e.preventDefault();
@@ -80,18 +76,16 @@
         return r.json();
       })
       .then(task => {
-        // Update button UI
         const icon = btn.querySelector('.focus-icon');
-        icon.textContent = task.daily_focus ? '⭐' : '☆';
+        icon.textContent = task.daily_focus ? '★' : '☆';
         btn.dataset.isFocus = task.daily_focus ? 'true' : 'false';
 
-        // Update any focus indicator in the summary so the tree view stays in sync
         const summaryEl = btn.closest('summary');
         if (summaryEl) {
           const focusIndicator = summaryEl.querySelector('.focus-indicator');
           if (focusIndicator) {
             if (task.daily_focus) {
-              focusIndicator.textContent = '⭐';
+              focusIndicator.textContent = '★';
               focusIndicator.style.display = '';
             } else {
               focusIndicator.textContent = '';
@@ -107,7 +101,6 @@
     }
   });
 
-  // Handle complete
   document.addEventListener('click', function(e) {
     if (e.target.closest('.complete-btn')) {
       e.preventDefault();
@@ -124,7 +117,6 @@
         return r.json();
       })
       .then(task => {
-        // Reload page to show updated status
         window.location.reload();
       })
       .catch(err => {
@@ -134,7 +126,6 @@
     }
   });
 
-  // Handle archive
   document.addEventListener('click', function(e) {
     if (e.target.closest('.archive-btn')) {
       e.preventDefault();

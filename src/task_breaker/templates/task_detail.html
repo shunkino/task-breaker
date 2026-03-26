@@ -11,7 +11,7 @@
 <article>
   <header>
     <h2>{{ task.title }}</h2>
-    <div>
+    <div class="flex-row">
       {% if task.status == "done" %}
       <mark class="status-done">done</mark>
       {% elif task.status == "archived" %}
@@ -19,15 +19,15 @@
       {% else %}
       <mark class="status-open">open</mark>
       {% endif %}
-      {% if task.atomic %}<mark>🔒 atomic</mark>{% endif %}
+      {% if task.atomic %}<mark class="status-archived">🔒 atomic</mark>{% endif %}
       <small>Level {{ task.level }}</small>
       {% if task.parent_id and parent %}
-      &nbsp;·&nbsp; Parent: <a href="/tasks/{{ parent.id }}">#{{ parent.id }} {{ parent.title }}</a>
+      <small>·</small>
+      <small>Parent: <a href="/tasks/{{ parent.id }}">#{{ parent.id }} {{ parent.title }}</a></small>
       {% endif %}
-      &nbsp;
-      <form action="/tasks/{{ task.id }}/focus" method="post" style="display:inline">
+      <form action="/tasks/{{ task.id }}/focus" method="post" class="inline-form">
         <button type="submit" class="outline secondary small-btn" title="Toggle daily focus">
-          {% if task.daily_focus %}⭐ In Daily Focus{% else %}☆ Add to Daily Focus{% endif %}
+          {% if task.daily_focus %}★ In Daily Focus{% else %}☆ Add to Daily Focus{% endif %}
         </button>
       </form>
     </div>
@@ -48,10 +48,9 @@
 
   <section>
     <h4>Due Date</h4>
-    <form action="/tasks/{{ task.id }}/due" method="post"
-      style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+    <form action="/tasks/{{ task.id }}/due" method="post" class="flex-row">
       <input type="date" name="due_date" id="due_date_input_{{ task.id }}"
-        value="{{ task.due_date.date().isoformat() if task.due_date else '' }}" />
+        value="{{ task.due_date.date().isoformat() if task.due_date else '' }}" style="max-width:200px" />
       <button type="submit" class="outline small-btn">Set due date</button>
       {% if task.due_date %}
       <button type="submit" class="outline contrast small-btn"
@@ -59,7 +58,7 @@
       {% endif %}
     </form>
     {% if task.due_date %}
-    <small>Current due date: {{ task.due_date.date().isoformat() }}</small>
+    <small style="margin-top:var(--sp-2);display:block">Current due date: {{ task.due_date.date().isoformat() }}</small>
     {% endif %}
   </section>
 
@@ -68,10 +67,13 @@
     <h4>Children</h4>
     <ul>
       {% for child in children %}
-      <li><a href="/tasks/{{ child.id }}">#{{ child.id }} {{ child.title }}</a>
-        <small>
-          {% if child.status == "done" %}✓{% else %}○{% endif %}
-        </small>
+      <li>
+        <a href="/tasks/{{ child.id }}">#{{ child.id }} {{ child.title }}</a>
+        {% if child.status == "done" %}
+        <mark class="status-done" style="margin-left:var(--sp-2)">✓</mark>
+        {% else %}
+        <mark class="status-open" style="margin-left:var(--sp-2)">○</mark>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -102,108 +104,108 @@
     <h4>Notes</h4>
     <form action="/tasks/{{ task.id }}/note" method="post">
       <textarea name="note" rows="3" placeholder="Add a note…">{{ task.notes or '' }}</textarea>
-      <button type="submit" class="outline">Save note</button>
+      <button type="submit" class="outline" style="margin-top:var(--sp-2)">Save note</button>
     </form>
   </section>
 
   <footer>
-    <small>Created: {{ task.created_at }} &nbsp;·&nbsp; Updated: {{ task.updated_at }}</small>
-    {% if task.status == "open" %}
-    &nbsp;
-    <form action="/tasks/{{ task.id }}/complete" method="post" style="display:inline">
-      {% if task.children_ids %}
-      <label style="font-size:0.8rem;display:inline;margin-right:0.3rem">
-        <input type="checkbox" name="include_children" style="display:inline;width:auto;margin:0">
-        Include children
-      </label>
-      {% endif %}
-      <button type="submit" class="secondary">✓ Mark complete</button>
-    </form>
-    &nbsp;
-    <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
-      {% if task.children_ids %}
-      <label style="font-size:0.8rem;display:inline;margin-right:0.3rem">
-        <input type="checkbox" name="include_children" style="display:inline;width:auto;margin:0">
-        Include children
-      </label>
-      {% endif %}
-      <button type="submit" class="contrast">📦 Archive</button>
-    </form>
-    {% elif task.status == "archived" %}
-    &nbsp;
-    <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
-      <button type="submit" class="secondary">↩ Reopen</button>
-    </form>
-    {% else %}
-    &nbsp;
-    <form action="/tasks/{{ task.id }}/reopen" method="post" style="display:inline">
-      <button type="submit" class="secondary">↩ Reopen</button>
-    </form>
-    &nbsp;
-    <form action="/tasks/{{ task.id }}/archive" method="post" style="display:inline">
-      {% if task.children_ids %}
-      <label style="font-size:0.8rem;display:inline;margin-right:0.3rem">
-        <input type="checkbox" name="include_children" style="display:inline;width:auto;margin:0">
-        Include children
-      </label>
-      {% endif %}
-      <button type="submit" class="contrast">📦 Archive</button>
-    </form>
-    {% endif %}
+    <div class="flex-row" style="justify-content:space-between;flex-wrap:wrap;gap:var(--sp-3)">
+      <small>Created: {{ task.created_at }} · Updated: {{ task.updated_at }}</small>
+      <div class="detail-actions">
+        {% if task.status == "open" %}
+        <form action="/tasks/{{ task.id }}/complete" method="post" class="inline-form">
+          {% if task.children_ids %}
+          <label style="font-size:var(--text-xs);display:inline;margin:0;color:var(--text-muted)">
+            <input type="checkbox" name="include_children" style="width:auto;margin:0">
+            Include children
+          </label>
+          {% endif %}
+          <button type="submit" class="secondary small-btn">✓ Mark complete</button>
+        </form>
+        <form action="/tasks/{{ task.id }}/archive" method="post" class="inline-form">
+          {% if task.children_ids %}
+          <label style="font-size:var(--text-xs);display:inline;margin:0;color:var(--text-muted)">
+            <input type="checkbox" name="include_children" style="width:auto;margin:0">
+            Include children
+          </label>
+          {% endif %}
+          <button type="submit" class="contrast small-btn">📦 Archive</button>
+        </form>
+        {% elif task.status == "archived" %}
+        <form action="/tasks/{{ task.id }}/reopen" method="post" class="inline-form">
+          <button type="submit" class="secondary small-btn">↩ Reopen</button>
+        </form>
+        {% else %}
+        <form action="/tasks/{{ task.id }}/reopen" method="post" class="inline-form">
+          <button type="submit" class="secondary small-btn">↩ Reopen</button>
+        </form>
+        <form action="/tasks/{{ task.id }}/archive" method="post" class="inline-form">
+          {% if task.children_ids %}
+          <label style="font-size:var(--text-xs);display:inline;margin:0;color:var(--text-muted)">
+            <input type="checkbox" name="include_children" style="width:auto;margin:0">
+            Include children
+          </label>
+          {% endif %}
+          <button type="submit" class="contrast small-btn">📦 Archive</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
   </footer>
 </article>
 {% if task.ai_context_pending or task.breakdown_pending %}
 <script>
-(function () {
-  var taskId = {{ task.id }};
-  function pollStatus() {
-    fetch('/api/tasks/' + taskId + '/ai-status')
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (!data.ai_context_pending && !data.breakdown_pending) window.location.reload();
-      })
-      .catch(function () {});
-  }
-  setInterval(pollStatus, 5000);
+  (function () {
+    var taskId = {{ task.id }};
 
-  {% if task.breakdown_pending %}
-  var permContainer = document.getElementById('pending-permissions');
-  function pollPermissions() {
-    fetch('/api/permissions/pending')
-      .then(function (r) { return r.json(); })
-      .then(function (perms) {
-        var taskPerms = perms.filter(function (p) { return p.task_id === taskId; });
-        if (taskPerms.length === 0) {
-          permContainer.innerHTML = '';
-          return;
-        }
-        var html = '<div style="margin-top:0.5rem;padding:0.75rem;border:2px solid var(--pico-primary);border-radius:0.5rem;background:var(--pico-card-background-color)">';
-        html += '<strong>⚠️ WorkIQ needs your approval:</strong>';
-        taskPerms.forEach(function (p) {
-          html += '<div style="margin:0.5rem 0;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">';
-          html += '<span>Tool: <code>' + (p.tool || 'unknown') + '</code>';
-          if (p.server) html += ' on <code>' + p.server + '</code>';
-          html += '</span>';
-          html += '<button onclick="resolvePermission(\'' + p.id + '\', true)" class="small-btn" style="padding:0.2rem 0.6rem">✓ Approve</button>';
-          html += '<button onclick="resolvePermission(\'' + p.id + '\', false)" class="outline small-btn contrast" style="padding:0.2rem 0.6rem">✗ Deny</button>';
+    function pollStatus() {
+      fetch('/api/tasks/' + taskId + '/ai-status')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.ai_context_pending && !data.breakdown_pending) window.location.reload();
+        })
+        .catch(function () { });
+    }
+    setInterval(pollStatus, 5000);
+
+    {% if task.breakdown_pending %}
+    var permContainer = document.getElementById('pending-permissions');
+    function pollPermissions() {
+      fetch('/api/permissions/pending')
+        .then(function (r) { return r.json(); })
+        .then(function (perms) {
+          var taskPerms = perms.filter(function (p) { return p.task_id === taskId; });
+          if (taskPerms.length === 0) {
+            permContainer.innerHTML = '';
+            return;
+          }
+          var html = '<div class="ai-pending-banner" style="flex-direction:column;align-items:stretch">';
+          html += '<strong>⚠️ WorkIQ needs your approval:</strong>';
+          taskPerms.forEach(function (p) {
+            html += '<div class="flex-row" style="margin-top:var(--sp-2)">';
+            html += '<span>Tool: <code>' + (p.tool || 'unknown') + '</code>';
+            if (p.server) html += ' on <code>' + p.server + '</code>';
+            html += '</span>';
+            html += '<button onclick="resolvePermission(\'' + p.id + '\', true)" class="small-btn" style="padding:2px 10px">✓ Approve</button>';
+            html += '<button onclick="resolvePermission(\'' + p.id + '\', false)" class="outline contrast small-btn" style="padding:2px 10px">✗ Deny</button>';
+            html += '</div>';
+          });
           html += '</div>';
-        });
-        html += '</div>';
-        permContainer.innerHTML = html;
-      })
-      .catch(function () {});
-  }
-  setInterval(pollPermissions, 3000);
-  pollPermissions();
+          permContainer.innerHTML = html;
+        })
+        .catch(function () { });
+    }
+    setInterval(pollPermissions, 3000);
+    pollPermissions();
 
-  window.resolvePermission = function (permId, approve) {
-    var action = approve ? 'approve' : 'deny';
-    fetch('/api/permissions/' + permId + '/' + action, { method: 'POST' })
-      .then(function () { pollPermissions(); })
-      .catch(function () {});
-  };
-  {% endif %}
-})();
+    window.resolvePermission = function (permId, approve) {
+      var action = approve ? 'approve' : 'deny';
+      fetch('/api/permissions/' + permId + '/' + action, { method: 'POST' })
+        .then(function () { pollPermissions(); })
+        .catch(function () { });
+    };
+    {% endif %}
+  })();
 </script>
 {% endif %}
 {% endblock %}
